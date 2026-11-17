@@ -1,0 +1,192 @@
+using System;
+using System.Drawing;
+using System.IO;
+using System.Net;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace Bodoni
+{
+    public sealed partial class MainForm
+    {
+        IssueWorkflow workflow;
+        NetworkConfig networkConfig;
+        NumberServer numberServer;
+        Label networkNotice, networkStatus;
+        Button issueButton;
+        bool networkBusy, polling, connected;
+        int connectionGeneration;
+        readonly Timer networkTimer = new Timer { Interval = 4000 };
+        string WorkNumber { get { return workflow == null ? "PRUEBA" : workflow.Number; } }
+        string WorkPath { get { return Path.Combine(Storage.Root, "tramite-actual.json"); } }
+
+        Control BuildNetworkBar()
+        {
+            TableLayoutPanel bar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Color.White };
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 575)); bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            bar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            FlowLayoutPanel actions = Flow();
+            actions.Controls.Add(Button("Red y numeración", ConfigureNetwork));
+            issueButton = Button("Emitir y asignar número", IssueCurrent); issueButton.BackColor = Blue; issueButton.ForeColor = Color.White; issueButton.Enabled = false;
+            actions.Controls.Add(issueButton); actions.Controls.Add(Button("Historial", ShowHistory)); actions.Controls.Add(Button("Exportar conexión", ExportConnection));
+            bar.Controls.Add(actions, 0, 0);
+            networkStatus = TextLabel("Sin principal configurado · Los borradores no consumen números."); networkStatus.MinimumSize = new Size(260, 30); networkStatus.Padding = new Padding(8, 0, 0, 0);
+            bar.Controls.Add(networkStatus, 1, 0); return bar;
+        }
+        void RestoreWork()
+        {
+            workflow = new IssueWorkflow(WorkPath, ReadDraft());
+            SetDraft(workflow.State.Draft); dirty = false;
+        }
+        bool CanEditWork()
+        {
+            if (workflow != null && workflow.Locked) { ShowInfo("Este documento está emitido o pendiente de recuperación. Usa Nueva para otra nota, o recupera la emisión pendiente."); return false; }
+            return true;
+        }
+        bool CanLeaveWork()
+        {
+            if (networkBusy) { ShowInfo("Espera a que termine la consulta al principal."); return false; }
+            if (workflow != null && workflow.State.Pending) { ShowInfo("Recupera primero la emisión pendiente. La misma solicitud puede tener ya un número en el principal."); return false; }
+            return true;
+        }
+        void BeginDraft(Draft draft)
+        {
+            if (!CanLeaveWork() || !ConfirmDiscard()) return;
+            try { workflow.New(draft); SetDraft(draft); draftPath = null; dirty = false; SaveSession(); UpdateWorkControls(); }
+            catch (Exception ex) { ShowInfo(ex.Message); }
+        }
+        void UpdateWorkControls()
+        {
+            bool locked = workflow != null && workflow.Locked;
+            foreach (TextBox input in new TextBox[] { customer, identification, address, phone, email }) input.ReadOnly = locked;
+            date.Enabled = !locked; grid.ReadOnly = locked;
+            if (!locked) grid.Columns[3].ReadOnly = true;
+            bool pending = workflow != null && workflow.State.Pending;
+            bool issued = workflow != null && workflow.State.Issued != null;
+            issueButton.Text = pending ? "Recuperar emisión" : issued ? "Nota " + WorkNumber + " emitida" : "Emitir y asignar número";
+            issueButton.Enabled = !networkBusy && !issued && networkConfig != null && (connected || pending);
+            networkNotice.Text = pending ? "EMISIÓN PENDIENTE · Se conservará la misma solicitud al reconectar. No crees otra nota para reemplazarla."
+                : issued ? "NOTA EMITIDA " + WorkNumber + " · Conserva su número al generar otro PDF o reimprimir. Usa Nueva para la siguiente venta."
+                : "BORRADOR · Los PDF de prueba no consumen numeración. Usa Emitir para asignar el número desde el principal.";
+            networkNotice.BackColor = issued ? Color.FromArgb(221, 243, 230) : Color.FromArgb(255, 242, 210);
+        }
+        void LoadNetwork()
+        {
+            networkTimer.Tick += delegate { PollNetwork(); };
+            if (!File.Exists(NetworkConfig.ConfigPath)) return;
+            try { ApplyNetwork(NetworkJson.Read<NetworkConfig>(NetworkConfig.ConfigPath)); }
+            catch (Exception ex) { networkStatus.Text = "No se inició la conexión: " + ex.Message; connected = false; UpdateWorkControls(); }
+        }
+        void ApplyNetwork(NetworkConfig config)
+        {
+            config.Validate(); connectionGeneration++; connected = false;
+            if (numberServer != null) { numberServer.Dispose(); numberServer = null; }
+            networkConfig = NetworkJson.Copy(config);
+            if (networkConfig.Role == "Principal")
+            {
+                numberServer = new NumberServer(networkConfig, NetworkConfig.LedgerPath, IPAddress.Any, networkConfig.Port);
+                if (!networkConfig.Initialized)
+                {
+                    networkConfig.Initialized = true;
+                    try { NetworkJson.Save(NetworkConfig.ConfigPath, networkConfig); }
+                    catch { numberServer.Dispose(); numberServer = null; throw; }
+                }
+            }
+            networkStatus.Text = "Conectando con " + (networkConfig.Role == "Principal" ? "este principal" : networkConfig.Host) + "…";
+            UpdateWorkControls(); networkTimer.Start(); PollNetwork();
+        }
+        async void PollNetwork()
+        {
+            if (polling || networkBusy || networkConfig == null || IsDisposed) return;
+            polling = true; int generation = connectionGeneration; NetworkConfig config = NetworkJson.Copy(networkConfig);
+            try
+            {
+                CentralStatus status = await Task.Factory.StartNew(delegate { return new NumberClient(config).Status(); });
+                if (IsDisposed || generation != connectionGeneration) return;
+                connected = true;
+                networkStatus.Text = (config.Role == "Principal" ? "PRINCIPAL" : config.Host) + " · Último " + status.LastNumber.ToString("D6") + " · Próximo " + (status.NextNumber > 999999 ? "agotado" : status.NextNumber.ToString("D6"));
+                networkStatus.ForeColor = Color.FromArgb(30, 105, 70);
+            }
+            catch (Exception)
+            {
+                if (IsDisposed || generation != connectionGeneration) return;
+                connected = false; networkStatus.Text = "Sin conexión al principal · No se asignarán números localmente."; networkStatus.ForeColor = Color.Firebrick;
+            }
+            finally { polling = false; if (!IsDisposed) UpdateWorkControls(); }
+        }
+        void ConfigureNetwork(object sender, EventArgs args)
+        {
+            if (networkBusy) return;
+            using (NetworkSetupForm dialog = new NetworkSetupForm(networkConfig))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                try
+                {
+                    if (workflow.State.Pending && workflow.State.ServerId != dialog.Result.ServerId) throw new InvalidOperationException("Hay una emisión pendiente en otro principal. Recupera primero esa conexión.");
+                    NetworkJson.Save(NetworkConfig.ConfigPath, dialog.Result); ApplyNetwork(dialog.Result);
+                }
+                catch (Exception ex) { connected = false; UpdateWorkControls(); ShowInfo("No se pudo iniciar la conexión. La configuración se conserva para reintentar.\n\n" + ex.Message); }
+            }
+        }
+        void ExportConnection(object sender, EventArgs args)
+        {
+            if (networkConfig == null || networkConfig.Role != "Principal" || numberServer == null) { ShowInfo("Exporta la conexión desde el equipo configurado como principal y con el servicio iniciado."); return; }
+            using (SaveFileDialog dialog = new SaveFileDialog { Title = "Guardar conexión para los otros equipos de Bodoni", Filter = "Conexión Bodoni|*.bodoni-red.json", FileName = "Conexion-Bodoni.bodoni-red.json", DefaultExt = "bodoni-red.json", OverwritePrompt = true })
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                try { NetworkJson.Save(dialog.FileName, networkConfig.ForClient(String.IsNullOrWhiteSpace(networkConfig.Host) || networkConfig.Host == "127.0.0.1" ? Environment.MachineName : networkConfig.Host)); ShowInfo("Conexión exportada. Copia este archivo a los otros equipos e impórtalo en Red y numeración. Si el nombre del principal no responde, usa su dirección IP en esos equipos."); }
+                catch (Exception ex) { ShowInfo("No se pudo exportar la conexión.\n\n" + ex.Message); }
+            }
+        }
+        async void IssueCurrent(object sender, EventArgs args)
+        {
+            if (networkBusy || networkConfig == null || workflow.State.Issued != null) return;
+            try
+            {
+                if (!workflow.State.Pending)
+                {
+                    Draft draft = ReadDraft(); Bodoni.Layout.Build(draft, ActiveProfile, true); NoteRules.Normalize(draft);
+                    if (MessageBox.Show(this, "Se guardará esta nota en el principal y se le asignará el siguiente número real. Después podrás generar sus PDF o reimprimir con ese mismo número.\n\n¿Emitir la nota de venta?", "Emitir nota de venta", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                    workflow.Prepare(draft, networkConfig.ServerId);
+                }
+                else workflow.Prepare(workflow.State.Draft, networkConfig.ServerId);
+                dirty = false; networkBusy = true; UpdateWorkControls();
+                NetworkConfig config = NetworkJson.Copy(networkConfig); WorkState request = NetworkJson.Copy(workflow.State);
+                IssuedNote note = await Task.Factory.StartNew(delegate { return new NumberClient(config).Issue(request.RequestId, request.Draft); });
+                // The saved request survives even if this window closes before
+                // the response. Recovery always uses the same identifier.
+                if (IsDisposed) return;
+                workflow.Complete(note); SetDraft(note.Note); dirty = false; SaveSession();
+                footer.Text = "Nota " + note.DisplayNumber + " guardada en el principal. Genera el PDF completo o solo datos; reimprimir no cambia su número.";
+            }
+            catch (Exception ex)
+            {
+                if (IsDisposed) return;
+                ShowInfo("No se completó la confirmación de emisión.\n\n" + ex.Message + (workflow.State.Pending ? "\n\nLa solicitud está guardada. Pulsa Recuperar emisión al reconectar; se utilizará el mismo número si el principal ya la guardó." : ""));
+            }
+            finally { networkBusy = false; if (!IsDisposed) { UpdateWorkControls(); RefreshPreview(); PollNetwork(); } }
+        }
+        async void ShowHistory(object sender, EventArgs args)
+        {
+            if (!CanLeaveWork() || !ConfirmDiscard()) return;
+            if (networkConfig == null) { ShowInfo("Configura primero la conexión con el principal."); return; }
+            networkBusy = true; UpdateWorkControls();
+            try
+            {
+                NetworkConfig config = NetworkJson.Copy(networkConfig);
+                System.Collections.Generic.List<NoteSummary> notes = await Task.Factory.StartNew(delegate { return new NumberClient(config).Recent(); });
+                if (IsDisposed) return;
+                using (NoteHistoryForm dialog = new NoteHistoryForm(notes))
+                {
+                    if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                    IssuedNote note = await Task.Factory.StartNew(delegate { return new NumberClient(config).Find(dialog.SelectedRequest); });
+                    if (IsDisposed) return;
+                    if (note == null) throw new InvalidDataException("El principal no encontró esa nota.");
+                    workflow.OpenIssued(note); SetDraft(note.Note); dirty = false; UpdateWorkControls();
+                }
+            }
+            catch (Exception ex) { if (!IsDisposed) ShowInfo("No se pudo consultar el historial.\n\n" + ex.Message); }
+            finally { networkBusy = false; if (!IsDisposed) UpdateWorkControls(); }
+        }
+    }
+}

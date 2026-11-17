@@ -1,0 +1,45 @@
+OK - 100 × 0,25 + 2 × 12,50 = 50,00
+OK - Coma y punto decimal equivalentes
+OK - Separadores de miles ambiguos rechazados
+OK - Valores no numéricos rechazados
+OK - Redondeo decimal de 0,005 a 0,01
+OK - Cantidad cero rechazada
+OK - Precio negativo rechazado
+OK - Precio cero permitido
+OK - Exceso de decimales en cantidad rechazado
+OK - Salida marcada PRUEBA, sin número real
+OK - No se presenta el próximo número real como emitido
+OK - Página PDF de 200 × 145 mm
+OK - PDF contiene total y marca de prueba
+OK - PDF sin imagen de fondo ni encabezado preimpreso
+OK - Fuentes Arial y Times incrustadas en el PDF
+OK - Caracteres españoles y literales especiales admitidos
+OK - Caracteres no representables rechazados antes de exportar
+OK - Saltos de línea rechazados para no invadir otras casillas
+OK - Descripción que excede la casilla rechazada
+OK - Cliente vacío rechazado para PDF
+OK - Fecha imposible rechazada
+OK - Más de diez filas rechazadas
+OK - Décima fila disponible sin invadir el total
+OK - Desplazamientos aplicados en milímetros
+OK - Serie se puede ocultar si ya está preimpresa
+OK - La serie preimpresa no se duplica en la configuración inicial
+OK - Se conserva la opción de imprimir serie para otros formularios
+OK - Cliente, identificación y décima fila dentro de las casillas de la plantilla original
+OK - Imagen original completa incrustada dentro del ejecutable
+OK - PDF completo incluye la plantilla como fondo real del documento
+OK - La plantilla se incrusta a su resolución completa
+OK - PDF completo conserva medidas, total y marca de prueba
+OK - Referencias del PDF válidas con y sin objeto de imagen
+OK - PDF completo no duplica la serie que ya aparece en la plantilla
+OK - La plantilla se dibuja detrás del texto y no lo tapa
+OK - Borrador conserva cliente y detalle al guardarse y recuperarse
+OK - Reemplazo de borrador y caracteres españoles conservados
+OK - Perfil y selección persisten al recuperarse
+OK - Perfiles anteriores evitan duplicar serie y conservan la calibración
+OK - Una selección posterior de imprimir serie se respeta sin repetir la migración
+OK - PDF de muestra, borrador y vista de datos generados sin tocar datos_prototipo
+OK - Controles de pantalla: total inicial, edición de celda y validación de cliente sin abrir ventanas
+OK - Las dos opciones de exportación de la pantalla generan el PDF correspondiente
+OK - Al abrir se recuperan automáticamente plantilla, texto y total de la última sesión
+RESULTADO: TODAS LAS COMPROBACIONES CORRECTAS

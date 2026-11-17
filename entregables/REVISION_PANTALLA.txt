@@ -1,0 +1,1 @@
+﻿OK - Ventana visible, captura de controles, edición de detalle y validación de cliente.

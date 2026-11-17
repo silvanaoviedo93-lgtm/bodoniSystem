@@ -1,0 +1,65 @@
+OK - Último confirmado 004121; siguiente 004122 sin consumir al consultar
+OK - Un segundo proceso no puede abrir el mismo registro central
+OK - Una clave incorrecta no permite consultar ni emitir
+OK - No se acepta una respuesta de otro principal
+OK - Documento inválido rechazado sin consumir numeración
+OK - Errores de acceso y validación no cambian el contador
+OK - Tres clientes TCP emiten 30 notas concurrentes, únicas y consecutivas 004122–004151
+OK - Secuencia sin duplicados, posición 1
+OK - Secuencia sin duplicados, posición 2
+OK - Secuencia sin duplicados, posición 3
+OK - Secuencia sin duplicados, posición 4
+OK - Secuencia sin duplicados, posición 5
+OK - Secuencia sin duplicados, posición 6
+OK - Secuencia sin duplicados, posición 7
+OK - Secuencia sin duplicados, posición 8
+OK - Secuencia sin duplicados, posición 9
+OK - Secuencia sin duplicados, posición 10
+OK - Secuencia sin duplicados, posición 11
+OK - Secuencia sin duplicados, posición 12
+OK - Secuencia sin duplicados, posición 13
+OK - Secuencia sin duplicados, posición 14
+OK - Secuencia sin duplicados, posición 15
+OK - Secuencia sin duplicados, posición 16
+OK - Secuencia sin duplicados, posición 17
+OK - Secuencia sin duplicados, posición 18
+OK - Secuencia sin duplicados, posición 19
+OK - Secuencia sin duplicados, posición 20
+OK - Secuencia sin duplicados, posición 21
+OK - Secuencia sin duplicados, posición 22
+OK - Secuencia sin duplicados, posición 23
+OK - Secuencia sin duplicados, posición 24
+OK - Secuencia sin duplicados, posición 25
+OK - Secuencia sin duplicados, posición 26
+OK - Secuencia sin duplicados, posición 27
+OK - Secuencia sin duplicados, posición 28
+OK - Secuencia sin duplicados, posición 29
+OK - Secuencia sin duplicados, posición 30
+OK - Historial y contador son compartidos por los tres clientes
+OK - Doble clic y reintentos simultáneos devuelven la misma nota 004152
+OK - La misma solicitud con otro contenido se rechaza
+OK - Conflicto de solicitud no consume otro número
+OK - Reabrir el programa conserva la solicitud cuyo resultado se perdió
+OK - Recuperar la respuesta perdida conserva 004153 sin emitir otra nota
+OK - La nota emitida no se modifica al guardar otro texto como borrador
+OK - No se puede abandonar una solicitud pendiente para crear otra emisión
+OK - Una emisión pendiente no puede trasladarse a otro principal
+OK - El PDF de una nota emitida muestra su número central, no PRUEBA
+OK - Un fallo al guardar el PDF se comunica sin emitir otra nota
+OK - Fallo de PDF, regeneración y cambio de modalidad no consumen números
+OK - Se recupera una nota específica; una inexistente no cambia el contador
+OK - Sin principal no se emite ni se asignan números locales
+OK - La emisión sin respuesta permanece recuperable
+OK - Reiniciar el principal conserva su contador aunque cambie el valor inicial de configuración
+OK - Al reconectar se completa la solicitud guardada con el siguiente número central
+OK - Reintentar después de reconectar sigue sin duplicar numeración
+OK - Interfaz bloquea la edición de una nota emitida y genera PDF con su mismo número
+OK - Fallo de guardado central no confirma la emisión
+OK - Un fallo de escritura no adelanta el contador en memoria ni guarda una nota parcial
+OK - Después del fallo el siguiente número sigue siendo 004122
+OK - Un registro dañado bloquea la emisión y nunca reinicia el contador automáticamente
+OK - El registro dañado se conserva para recuperación
+OK - Si se borra el registro, su marca de inicialización impide reiniciar el contador
+OK - La configuración de un principal existente también impide arrancar con datos vacíos
+ALCANCE: pruebas en TCP local con tres clientes; instalación y prueba entre computadoras físicas pendientes.
+RESULTADO: TODAS LAS COMPROBACIONES DE RED CORRECTAS

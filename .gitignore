@@ -1,0 +1,13 @@
+﻿datos_prototipo/
+datos_bodoni/
+*.tmp
+
+# Ejecutables y paquetes generados
+*.exe
+*.zip
+
+# Salidas de pruebas y exportaciones
+entregables/*.pdf
+entregables/*.png
+entregables/*.bodoni.json
+entregables/Bodoni-Red/
