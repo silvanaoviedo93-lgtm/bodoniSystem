@@ -390,11 +390,23 @@ namespace Bodoni
             }
             catch (Exception ex) { ShowInfo("No se pudo guardar el borrador.\n\n" + ex.Message); return false; }
         }
-        void ExportPdf(bool includeTemplate)
+        async void ExportPdf(bool includeTemplate)
         {
+            if (networkBusy) return;
             try
             {
                 if (workflow != null && workflow.State.Pending) throw new InvalidOperationException("Primero recupera la emisión pendiente para saber qué número le asignó el principal.");
+                if (workflow != null && workflow.State.Issued != null)
+                {
+                    if (networkConfig == null || networkConfig.ServerId != workflow.State.Issued.ServerId) throw new InvalidOperationException("Conecta con el principal original para comprobar que la nota sigue vigente.");
+                    networkBusy = true; UpdateWorkControls();
+                    NetworkConfig config = NetworkJson.Copy(networkConfig); string requestId = workflow.State.Issued.RequestId;
+                    IssuedNote current = await System.Threading.Tasks.Task.Factory.StartNew(delegate { return new NumberClient(config).Find(requestId); });
+                    if (IsDisposed) return;
+                    if (current == null) throw new InvalidOperationException("No se encontró la nota en el principal.");
+                    workflow.OpenIssued(current);
+                    if (current.Cancelled) throw new InvalidOperationException("Esta nota está anulada y se conserva para consulta. No se genera un PDF válido de una nota anulada.");
+                }
                 Draft draft = ReadDraft(); Bodoni.Layout.Build(draft, ActiveProfile, true, WorkNumber);
                 using (SaveFileDialog dialog = new SaveFileDialog { Title = includeTemplate ? "Guardar PDF completo con plantilla" : "Guardar PDF SOLO DATOS para papel preimpreso", Filter = "Documento PDF|*.pdf", DefaultExt = "pdf", FileName = "Bodoni-" + (Program.PracticeMode ? "PRACTICA-" : "") + WorkNumber + (includeTemplate ? "-completa.pdf" : "-solo-datos.pdf"), InitialDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "entregables"), OverwritePrompt = true })
                 {
@@ -406,6 +418,7 @@ namespace Bodoni
                 }
             }
             catch (Exception ex) { ShowInfo("No se pudo generar o abrir el PDF.\n\n" + ex.Message); }
+            finally { networkBusy = false; if (!IsDisposed) UpdateWorkControls(); }
         }
         void SavePdfForMode(string path, Draft draft, bool includeTemplate)
         {

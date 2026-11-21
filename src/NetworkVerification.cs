@@ -32,6 +32,11 @@ namespace Bodoni
             try
             {
                 NetworkConfig config = NetworkConfig.Principal(4121, 47831);
+                using (CentralLedger diagnostic = new CentralLedger(Path.Combine(temp, "diagnostico", "registro.json"), config))
+                {
+                    string diagnosticId = Guid.NewGuid().ToString("D"); diagnostic.Issue(diagnosticId, Sample("ANULACIÓN LOCAL"), "TEST"); diagnostic.CancelLast(diagnosticId, "Error de cliente");
+                    Check(diagnostic.Find(diagnosticId).Cancelled, "Anulación local conserva la original sin depender del cliente TCP");
+                }
                 string ledgerPath = Path.Combine(temp, "principal", "registro.json");
                 NetworkConfig clientConfig;
                 int last;
@@ -122,6 +127,47 @@ namespace Bodoni
                     Storage.Root = originalRoot;
                 }
 
+                string replacementPath = Path.Combine(temp, "reemplazos", "registro.json");
+                string originalRequest = Guid.NewGuid().ToString("D");
+                string replacementRequest = Guid.NewGuid().ToString("D");
+                Draft originalDraft = Sample("ORIGINAL ANULADA");
+                using (NumberServer server = new NumberServer(config, replacementPath, IPAddress.Loopback, 0))
+                {
+                    NetworkConfig replacementConfig = config.ForClient("127.0.0.1"); replacementConfig.Port = server.Port;
+                    NumberClient client = new NumberClient(replacementConfig);
+                    client.Issue(originalRequest, originalDraft);
+                    Reject(delegate { client.CancelLast(originalRequest, ""); }, "Anulación exige un motivo y no modifica la secuencia");
+                    IssuedNote cancelled = client.CancelLast(originalRequest, "Error de cliente");
+                    Check(cancelled.Cancelled && cancelled.Number == 4122 && cancelled.CancellationReason == "Error de cliente", "Anulación conserva nota, motivo y número");
+                    Check(client.Status().LastNumber == 4122 && client.Status().NextNumber == 4122, "Última numeración y número disponible reflejan el reemplazo pendiente");
+                    Check(client.CancelLast(originalRequest, "Reintento de anulación").CancelledUtc == cancelled.CancelledUtc, "Reintentar anulación conserva el registro original");
+                    Check(client.Issue(originalRequest, originalDraft).Cancelled, "Reintentar la emisión original devuelve la anulada, sin resucitarla");
+                    Reject(delegate { Pdf.SaveIssued(Path.Combine(temp, "anulada.pdf"), cancelled, new Profile(), null); }, "PDF válido bloqueado para una nota anulada");
+                    IssuedNote replacement = client.Issue(replacementRequest, Sample("REEMPLAZO"));
+                    Check(replacement.Number == 4122 && !replacement.Cancelled, "Nueva solicitud reemplaza solo el último número anulado");
+                    Check(client.Find(originalRequest).Cancelled && client.Find(replacementRequest).Note.Customer != originalDraft.Customer, "Original anulada y reemplazo permanecen consultables por separado");
+                    Check(client.Recent().Count == 2 && client.Recent().Exists(delegate(NoteSummary note) { return note.State.StartsWith("ANULADA"); }), "Historial muestra ambas versiones y motivo de anulación");
+                    Check(client.Issue(replacementRequest, Sample("REEMPLAZO")).Number == 4122 && client.Status().NextNumber == 4123, "Reintentar reemplazo no duplica ni consume otro número");
+                    client.Issue(Guid.NewGuid().ToString("D"), Sample("POSTERIOR"));
+                    Reject(delegate { client.CancelLast(replacementRequest, "Nota anterior"); }, "No se puede anular para reutilizar una nota que tiene otra posterior");
+                    Check(client.CancelLast(originalRequest, "Reintento antiguo").Cancelled && client.Status().NextNumber == 4124, "Reintentar anulación antigua no libera el número de un reemplazo vigente");
+                }
+                using (CentralLedger reopened = new CentralLedger(replacementPath, config))
+                {
+                    Check(reopened.Find(originalRequest).Cancelled && reopened.Find(replacementRequest).Number == 4122 && reopened.Status().NextNumber == 4124, "Reinicio conserva historial de reemplazos y secuencia");
+                    IssuedNote latest = reopened.Find(reopened.Recent()[0].RequestId);
+                    reopened.BeforeCommit = delegate { throw new IOException("Fallo al guardar anulación"); };
+                    Reject(delegate { reopened.CancelLast(latest.RequestId, "Fallo de guardado"); }, "Fallo durable de anulación no confirma el cambio");
+                    Check(!reopened.Find(latest.RequestId).Cancelled && reopened.Status().NextNumber == 4124, "Fallo de anulación conserva nota vigente y contador");
+                    reopened.BeforeCommit = null; reopened.CancelLast(latest.RequestId, "Corregir última");
+                }
+                using (CentralLedger reopened = new CentralLedger(replacementPath, config))
+                {
+                    Check(reopened.Status().NextNumber == 4123, "Reinicio con anulación pendiente conserva el número a reemplazar");
+                    ConcurrentBag<IssuedNote> replacements = new ConcurrentBag<IssuedNote>();
+                    Parallel.For(0, 2, delegate(int index) { replacements.Add(reopened.Issue(Guid.NewGuid().ToString("D"), Sample("CONCURRENTE " + index), "TEST")); });
+                    Check(replacements.Select(delegate(IssuedNote note) { return note.Number; }).OrderBy(delegate(int number) { return number; }).SequenceEqual(new int[] { 4123, 4124 }), "Dos reemplazos concurrentes no asignan el mismo número vigente");
+                }
                 Storage.Root = Path.Combine(temp, "practica");
                 Program.PreparePractice(); NetworkConfig practice = NetworkJson.Read<NetworkConfig>(NetworkConfig.ConfigPath);
                 Check(practice.Role == "Principal" && practice.InitialLast == 4121 && practice.Port == 47832, "Práctica configura principal local con último 004121 y puerto separado");

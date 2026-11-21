@@ -89,10 +89,14 @@ namespace Bodoni
         public string Fingerprint { get; set; }
         public Draft Note { get; set; }
         public decimal Total { get; set; }
+        public bool Cancelled { get; set; }
+        public string CancellationReason { get; set; }
+        public string CancelledUtc { get; set; }
         public string DisplayNumber { get { return Number.ToString("D6", CultureInfo.InvariantCulture); } }
     }
     public class NoteSummary
     {
+        public string State { get; set; }
         public string RequestId { get; set; }
         public string Number { get; set; }
         public string Customer { get; set; }
@@ -108,6 +112,7 @@ namespace Bodoni
         public int InitialLast { get; set; }
         public int LastNumber { get; set; }
         public List<IssuedNote> Notes { get; set; }
+        public List<IssuedNote> CancelledHistory { get; set; }
     }
     public class LedgerEnvelope
     {
@@ -149,7 +154,7 @@ namespace Bodoni
                 else
                 {
                     if (config.Initialized || File.Exists(marker)) throw new InvalidDataException("Falta el registro de un principal que ya fue inicializado. No se reiniciará el consecutivo: recupera sus datos antes de emitir.");
-                    state = new CentralState { Version = 1, ServerId = config.ServerId, Series = "001-001-000", InitialLast = config.InitialLast, LastNumber = config.InitialLast, Notes = new List<IssuedNote>() };
+                    state = new CentralState { Version = 2, ServerId = config.ServerId, Series = "001-001-000", InitialLast = config.InitialLast, LastNumber = config.InitialLast, Notes = new List<IssuedNote>() };
                     Commit(state);
                 }
                 if (!File.Exists(marker)) Storage.WriteBytes(marker, Encoding.ASCII.GetBytes(config.ServerId));
@@ -158,7 +163,7 @@ namespace Bodoni
         }
         void ValidateState(string expectedId)
         {
-            if (state == null || state.Version != 1 || state.ServerId != expectedId || state.Series != "001-001-000" || state.Notes == null || state.InitialLast < 0 || state.LastNumber > 999999 || state.LastNumber != state.InitialLast + state.Notes.Count)
+            if (state == null || state.Version < 1 || state.Version > 2 || state.ServerId != expectedId || state.Series != "001-001-000" || state.Notes == null || state.InitialLast < 0 || state.LastNumber > 999999 || state.LastNumber != state.InitialLast + state.Notes.Count)
                 throw new InvalidDataException("El registro central no coincide con esta conexión o su secuencia no es válida. No se reiniciará.");
             HashSet<string> ids = new HashSet<string>(StringComparer.Ordinal);
             for (int i = 0; i < state.Notes.Count; i++)
@@ -166,7 +171,11 @@ namespace Bodoni
                 IssuedNote note = state.Notes[i]; Guid id;
                 if (note == null || !Guid.TryParse(note.RequestId, out id) || !ids.Add(note.RequestId) || note.ServerId != state.ServerId || note.Series != state.Series || note.Number != state.InitialLast + i + 1 || note.Fingerprint != NoteRules.Fingerprint(note.Note) || note.Total != Calculation.Total(Calculation.Lines(note.Note)))
                     throw new InvalidDataException("El registro contiene una nota incoherente. No se reiniciará el contador.");
+                if (note.Cancelled && (i != state.Notes.Count - 1 || String.IsNullOrWhiteSpace(note.CancellationReason) || String.IsNullOrWhiteSpace(note.CancelledUtc))) throw new InvalidDataException("La anulación del registro no es válida.");
             }
+            if (state.CancelledHistory == null) state.CancelledHistory = new List<IssuedNote>();
+            foreach (IssuedNote note in state.CancelledHistory)
+                if (note == null || !note.Cancelled || String.IsNullOrWhiteSpace(note.CancellationReason) || String.IsNullOrWhiteSpace(note.CancelledUtc) || !ids.Add(note.RequestId) || note.ServerId != state.ServerId || note.Series != state.Series || note.Number <= state.InitialLast || note.Number > state.LastNumber || note.Fingerprint != NoteRules.Fingerprint(note.Note) || note.Total != Calculation.Total(Calculation.Lines(note.Note))) throw new InvalidDataException("El historial de anulaciones no es válido.");
         }
         void Commit(CentralState candidate)
         {
@@ -177,13 +186,35 @@ namespace Bodoni
         void CheckOpen() { if (disposed) throw new ObjectDisposedException("Registro central"); }
         public CentralStatus Status()
         {
-            lock (gate) { CheckOpen(); return new CentralStatus { ServerId = state.ServerId, Series = state.Series, LastNumber = state.LastNumber, NextNumber = state.LastNumber + 1, Count = state.Notes.Count }; }
+            lock (gate) { CheckOpen(); return new CentralStatus { ServerId = state.ServerId, Series = state.Series, LastNumber = state.LastNumber, NextNumber = ReusableLast ? state.LastNumber : state.LastNumber + 1, Count = state.Notes.Count }; }
+        }
+        bool ReusableLast { get { return state.Notes.Count > 0 && state.Notes[state.Notes.Count - 1].Cancelled; } }
+        IssuedNote Lookup(string requestId)
+        {
+            IssuedNote note = state.Notes.Find(delegate(IssuedNote item) { return item.RequestId == requestId; });
+            return note ?? (state.CancelledHistory == null ? null : state.CancelledHistory.Find(delegate(IssuedNote item) { return item.RequestId == requestId; }));
+        }
+        public IssuedNote CancelLast(string requestId, string reason)
+        {
+            reason = (reason ?? "").Trim();
+            if (reason.Length < 3 || reason.Length > 300) throw new ArgumentException("Indica un motivo de anulación de 3 a 300 caracteres.");
+            lock (gate)
+            {
+                CheckOpen(); IssuedNote original = Lookup(requestId);
+                if (original == null) throw new ArgumentException("No se encontró la nota.");
+                if (original.Cancelled) return NetworkJson.Copy(original);
+                if (state.Notes.Count == 0 || state.Notes[state.Notes.Count - 1].RequestId != requestId) throw new ArgumentException("Solo se puede anular para reemplazar la última nota. Ya existe una nota posterior.");
+                CentralState candidate = NetworkJson.Copy(state); candidate.Version = 2;
+                IssuedNote cancelled = candidate.Notes[candidate.Notes.Count - 1];
+                cancelled.Cancelled = true; cancelled.CancellationReason = reason; cancelled.CancelledUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+                Commit(candidate); state = candidate; return NetworkJson.Copy(cancelled);
+            }
         }
         public IssuedNote Find(string requestId)
         {
             lock (gate)
             {
-                CheckOpen(); IssuedNote found = state.Notes.Find(delegate(IssuedNote note) { return note.RequestId == requestId; });
+                CheckOpen(); IssuedNote found = Lookup(requestId);
                 return found == null ? null : NetworkJson.Copy(found);
             }
         }
@@ -194,15 +225,17 @@ namespace Bodoni
             lock (gate)
             {
                 CheckOpen();
-                IssuedNote existing = state.Notes.Find(delegate(IssuedNote note) { return note.RequestId == requestId; });
+                IssuedNote existing = Lookup(requestId);
                 if (existing != null)
                 {
                     if (existing.Fingerprint != fingerprint) throw new ArgumentException("La solicitud ya corresponde a otra nota. Recupera su emisión original.");
                     return NetworkJson.Copy(existing);
                 }
-                if (state.LastNumber >= 999999) throw new ArgumentException("Se agotó el formato de seis dígitos. No se reiniciará la numeración.");
-                IssuedNote issued = new IssuedNote { RequestId = requestId, ServerId = state.ServerId, Series = state.Series, Number = state.LastNumber + 1, IssuedUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), Computer = (computer ?? "").Substring(0, Math.Min(80, (computer ?? "").Length)), Fingerprint = fingerprint, Note = normalized, Total = Calculation.Total(Calculation.Lines(normalized)) };
-                CentralState candidate = new CentralState { Version = 1, ServerId = state.ServerId, Series = state.Series, InitialLast = state.InitialLast, LastNumber = issued.Number, Notes = new List<IssuedNote>(state.Notes) };
+                if (state.LastNumber >= 999999 && !ReusableLast) throw new ArgumentException("Se agotó el formato de seis dígitos. No se reiniciará la numeración.");
+                IssuedNote issued = new IssuedNote { RequestId = requestId, ServerId = state.ServerId, Series = state.Series, Number = ReusableLast ? state.LastNumber : state.LastNumber + 1, IssuedUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), Computer = (computer ?? "").Substring(0, Math.Min(80, (computer ?? "").Length)), Fingerprint = fingerprint, Note = normalized, Total = Calculation.Total(Calculation.Lines(normalized)) };
+                CentralState candidate = NetworkJson.Copy(state); candidate.Version = 2; candidate.LastNumber = issued.Number;
+                if (candidate.CancelledHistory == null) candidate.CancelledHistory = new List<IssuedNote>();
+                if (ReusableLast) { candidate.CancelledHistory.Add(candidate.Notes[candidate.Notes.Count - 1]); candidate.Notes.RemoveAt(candidate.Notes.Count - 1); }
                 candidate.Notes.Add(issued);
                 // Document and counter are one durable atomic replacement. A
                 // failed write must not advance the in-memory counter either.
@@ -214,9 +247,12 @@ namespace Bodoni
             lock (gate)
             {
                 CheckOpen(); List<NoteSummary> list = new List<NoteSummary>();
-                for (int i = state.Notes.Count - 1; i >= 0 && list.Count < 200; i--)
+                List<IssuedNote> history = new List<IssuedNote>(state.Notes);
+                if (state.CancelledHistory != null) history.AddRange(state.CancelledHistory);
+                history.Sort(delegate(IssuedNote a, IssuedNote b) { int order = b.Number.CompareTo(a.Number); return order != 0 ? order : String.CompareOrdinal(b.IssuedUtc, a.IssuedUtc); });
+                for (int i = 0; i < history.Count && list.Count < 200; i++)
                 {
-                    IssuedNote note = state.Notes[i]; list.Add(new NoteSummary { RequestId = note.RequestId, Number = note.DisplayNumber, Customer = note.Note.Customer, Date = note.Note.Date, Total = note.Total, Computer = note.Computer });
+                    IssuedNote note = history[i]; list.Add(new NoteSummary { State = note.Cancelled ? "ANULADA: " + note.CancellationReason : "Emitida", RequestId = note.RequestId, Number = note.DisplayNumber, Customer = note.Note.Customer, Date = note.Note.Date, Total = note.Total, Computer = note.Computer });
                 }
                 return list;
             }
@@ -226,6 +262,7 @@ namespace Bodoni
 
     public class NetworkRequest
     {
+        public string Reason { get; set; }
         public int Version { get; set; }
         public string Key { get; set; }
         public string ServerId { get; set; }
@@ -317,13 +354,14 @@ namespace Bodoni
                         NetworkReply reply = new NetworkReply { ServerId = config.ServerId };
                         try
                         {
-                            if (request == null || request.Version != 1 || !SameKey(config.Key, request.Key) || request.ServerId != config.ServerId) throw new ArgumentException("La conexión no pertenece a este principal o su clave no es válida.");
+                            if (request == null || request.Version != 2 || !SameKey(config.Key, request.Key) || request.ServerId != config.ServerId) throw new ArgumentException("Revisa la conexión y utiliza la misma versión actualizada de Bodoni en todos los equipos.");
                             switch (request.Operation)
                             {
                                 case "status": reply.Status = ledger.Status(); break;
                                 case "issue": reply.Issued = ledger.Issue(request.RequestId, request.Note, request.Computer); reply.Status = ledger.Status(); break;
                                 case "find": reply.Issued = ledger.Find(request.RequestId); break;
                                 case "recent": reply.Notes = ledger.Recent(); break;
+                                case "cancel-last": reply.Issued = ledger.CancelLast(request.RequestId, request.Reason); reply.Status = ledger.Status(); break;
                                 default: throw new ArgumentException("La operación solicitada no existe.");
                             }
                             reply.Ok = true;
@@ -342,7 +380,7 @@ namespace Bodoni
     {
         readonly NetworkConfig config;
         public NumberClient(NetworkConfig configuration) { config = NetworkJson.Copy(configuration); config.Validate(); }
-        public NetworkReply Call(string operation, string requestId, Draft note)
+        public NetworkReply Call(string operation, string requestId, Draft note, string reason = null)
         {
             using (TcpClient client = new TcpClient())
             {
@@ -352,7 +390,7 @@ namespace Bodoni
                 client.ReceiveTimeout = 6000; client.SendTimeout = 6000;
                 using (NetworkStream stream = client.GetStream())
                 {
-                    NetworkFrame.Write(stream, new NetworkRequest { Version = 1, Key = config.Key, ServerId = config.ServerId, Operation = operation, RequestId = requestId, Note = note, Computer = Environment.MachineName });
+                    NetworkFrame.Write(stream, new NetworkRequest { Version = 2, Key = config.Key, ServerId = config.ServerId, Operation = operation, RequestId = requestId, Note = note, Reason = reason, Computer = Environment.MachineName });
                     NetworkReply reply = NetworkFrame.Read<NetworkReply>(stream);
                     if (reply == null || reply.ServerId != config.ServerId) throw new IOException("La respuesta no corresponde al principal configurado.");
                     if (!reply.Ok) throw new InvalidOperationException(reply.Error ?? "El principal rechazó la solicitud.");
@@ -361,6 +399,7 @@ namespace Bodoni
             }
         }
         public CentralStatus Status() { return Call("status", null, null).Status; }
+        public IssuedNote CancelLast(string requestId, string reason) { return Call("cancel-last", requestId, null, reason).Issued; }
         public IssuedNote Issue(string requestId, Draft note) { return Call("issue", requestId, note).Issued; }
         public IssuedNote Find(string requestId) { return Call("find", requestId, null).Issued; }
         public List<NoteSummary> Recent() { return Call("recent", null, null).Notes; }

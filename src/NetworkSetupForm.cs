@@ -102,8 +102,8 @@ namespace Bodoni
             Text = "Notas emitidas en el principal · Últimas 200"; Width = 900; Height = 500; StartPosition = FormStartPosition.CenterParent; Font = new Font("Segoe UI", 9);
             grid.Dock = DockStyle.Fill; grid.ReadOnly = true; grid.AllowUserToAddRows = false; grid.AllowUserToDeleteRows = false; grid.RowHeadersVisible = false;
             grid.AutoGenerateColumns = false; grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill; grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect; grid.MultiSelect = false;
-            string[] properties = { "Number", "Customer", "Date", "Total", "Computer" };
-            string[] headers = { "Número", "Cliente", "Fecha", "Total US$", "Equipo" };
+            string[] properties = { "Number", "Customer", "Date", "Total", "Computer", "State" };
+            string[] headers = { "Número", "Cliente", "Fecha", "Total US$", "Equipo", "Estado / motivo" };
             for (int i = 0; i < properties.Length; i++) grid.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = properties[i], HeaderText = headers[i], FillWeight = i == 1 ? 180 : 100 });
             grid.DataSource = notes; Controls.Add(grid);
             Button open = new Button { Text = "Abrir para consultar o reimprimir", Dock = DockStyle.Bottom, Height = 42 };

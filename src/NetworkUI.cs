@@ -31,6 +31,7 @@ namespace Bodoni
             issueButton = Button("Emitir y asignar número", IssueCurrent); issueButton.BackColor = Blue; issueButton.ForeColor = Color.White; issueButton.Enabled = false;
             actions.Controls.Add(issueButton); actions.Controls.Add(Button("Historial", ShowHistory)); actions.Controls.Add(Button("Exportar conexión", ExportConnection));
             actions.Controls.Add(Button("Última numeración", ShowNumbering));
+            actions.Controls.Add(Button("Anular última nota", CancelLastNote));
             bar.Controls.Add(actions, 0, 0);
             networkStatus = TextLabel("Sin principal configurado · Los borradores no consumen números."); networkStatus.MinimumSize = new Size(260, 30); networkStatus.Padding = new Padding(8, 0, 0, 0);
             bar.Controls.Add(networkStatus, 0, 1);
@@ -72,6 +73,7 @@ namespace Bodoni
                 : issued ? "NOTA EMITIDA " + WorkNumber + " · Conserva su número al generar otro PDF o reimprimir. Usa Nueva para la siguiente venta."
                 : "BORRADOR · Los PDF de prueba no consumen numeración. Usa Emitir para asignar el número desde el principal.";
             networkNotice.BackColor = issued ? Color.FromArgb(221, 243, 230) : Color.FromArgb(255, 242, 210);
+            if (issued && workflow.State.Issued.Cancelled) networkNotice.Text = "NOTA ANULADA " + WorkNumber + " · " + workflow.State.Issued.CancellationReason + " · Se conserva en el historial.";
             if (Program.PracticeMode) networkNotice.Text = "PRÁCTICA · " + networkNotice.Text;
         }
         void LoadNetwork()
@@ -158,6 +160,33 @@ namespace Bodoni
             }
             catch (Exception ex) { if (!IsDisposed) ShowInfo("No se pudo consultar la numeración actual.\n\n" + ex.Message); }
             finally { networkBusy = false; if (!IsDisposed) UpdateWorkControls(); }
+        }
+        async void CancelLastNote(object sender, EventArgs args)
+        {
+            if (networkBusy || !CanLeaveWork()) return;
+            if (networkConfig == null || workflow.State.Issued == null) { ShowInfo("Abre la última nota emitida desde Historial antes de anularla."); return; }
+            string reason;
+            using (Form dialog = new Form { Text = "Anular y reemplazar última nota " + WorkNumber, Width = 540, Height = 230, StartPosition = FormStartPosition.CenterParent, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false })
+            {
+                Label label = new Label { Text = "Se conservará la original anulada. La siguiente emisión reutilizará su número. Solo se permite si no existe una nota posterior.\n\nMotivo de la anulación:", Left = 16, Top = 16, Width = 490, Height = 70 };
+                TextBox input = new TextBox { Left = 16, Top = 88, Width = 490, MaxLength = 300 };
+                Button accept = new Button { Text = "Confirmar anulación", Left = 195, Top = 130, Width = 165, DialogResult = DialogResult.OK };
+                Button cancel = new Button { Text = "Cancelar", Left = 370, Top = 130, Width = 135, DialogResult = DialogResult.Cancel };
+                dialog.Controls.AddRange(new Control[] { label, input, accept, cancel }); dialog.CancelButton = cancel;
+                if (dialog.ShowDialog(this) != DialogResult.OK) return; reason = input.Text.Trim();
+            }
+            NetworkConfig config = NetworkJson.Copy(networkConfig); string requestId = workflow.State.Issued.RequestId;
+            if (workflow.State.Issued.ServerId != config.ServerId) { ShowInfo("Esta nota pertenece a otro principal. Recupera su conexión original."); return; }
+            networkBusy = true; UpdateWorkControls();
+            try
+            {
+                IssuedNote note = await Task.Factory.StartNew(delegate { return new NumberClient(config).CancelLast(requestId, reason); });
+                if (IsDisposed) return;
+                workflow.OpenIssued(note); UpdateWorkControls();
+                ShowInfo("Nota " + note.DisplayNumber + " anulada y conservada en Historial. Pulsa Nueva para preparar su reemplazo. El principal comprobará el número disponible al emitir.");
+            }
+            catch (Exception ex) { if (!IsDisposed) ShowInfo("No se pudo confirmar la anulación. Consulta la nota en Historial antes de continuar; puedes reintentar sobre la misma nota.\n\n" + ex.Message); }
+            finally { networkBusy = false; if (!IsDisposed) { UpdateWorkControls(); PollNetwork(); } }
         }
         async void IssueCurrent(object sender, EventArgs args)
         {

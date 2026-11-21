@@ -479,6 +479,7 @@ namespace Bodoni
         }
         public static void SaveIssued(string path, IssuedNote note, Profile profile, Image template)
         {
+            if (note != null && note.Cancelled) throw new InvalidOperationException("La nota está anulada y solo puede consultarse en el historial.");
             if (note == null || note.Fingerprint != NoteRules.Fingerprint(note.Note) || note.Number < 1 || note.Number > 999999 || note.Series != "001-001-000")
                 throw new ArgumentException("No se encontró una nota emitida válida para generar el PDF.");
             Storage.WriteBytes(path, Create(Layout.Build(note.Note, profile, true, note.DisplayNumber), template));
