@@ -122,6 +122,15 @@ namespace Bodoni
                     Storage.Root = originalRoot;
                 }
 
+                Storage.Root = Path.Combine(temp, "practica");
+                Program.PreparePractice(); NetworkConfig practice = NetworkJson.Read<NetworkConfig>(NetworkConfig.ConfigPath);
+                Check(practice.Role == "Principal" && practice.InitialLast == 4121 && practice.Port == 47832, "Práctica configura principal local con último 004121 y puerto separado");
+                Program.PreparePractice(); Check(NetworkJson.Read<NetworkConfig>(NetworkConfig.ConfigPath).ServerId == practice.ServerId, "Reabrir práctica conserva la identidad del principal");
+                Program.PracticeMode = true;
+                try { Check(Layout.Build(Sample("PDF PRÁCTICA"), new Profile(), true, "004122").Exists(delegate(TextItem item) { return item.Text == "PRUEBA 004122"; }), "Vista previa y PDF de práctica identifican el número como PRUEBA"); }
+                finally { Program.PracticeMode = false; }
+                Storage.Root = originalRoot;
+
                 string failurePath = Path.Combine(temp, "fallo-escritura", "registro.json");
                 using (CentralLedger ledger = new CentralLedger(failurePath, config))
                 {

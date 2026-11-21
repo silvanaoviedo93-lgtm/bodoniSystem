@@ -70,9 +70,9 @@ namespace Bodoni
             NetworkConfig config = isPrincipal ? principal : client;
             host.Text = isPrincipal ? Environment.MachineName : config.Host;
             port.Value = config.Port; key.Text = config.Key ?? ""; serverId.Text = config.ServerId ?? ""; last.Value = config.InitialLast;
-            last.Enabled = isPrincipal && !File.Exists(NetworkConfig.LedgerPath);
+            last.Enabled = isPrincipal && !config.Initialized && !File.Exists(NetworkConfig.LedgerPath) && !File.Exists(NetworkConfig.LedgerPath + ".inicializado");
             instructions.Text = isPrincipal
-                ? "Este equipo guardará las notas y asignará los números a todos. Debe permanecer encendido y con Bodoni abierto. Para una instalación nueva: último 004121, siguiente 004122. Un registro existente conserva su contador."
+                ? "Este equipo guardará las notas y asignará los números a todos. Debe permanecer encendido y con Bodoni abierto. Antes de la primera instalación ingresa el último número real utilizado. 004121 es solo la referencia de pruebas. Un registro existente conserva su contador."
                 : "Importa el archivo de conexión exportado en el principal. Si es necesario, cambia su nombre por su dirección IP. Este equipo no asignará números sin conexión al principal.";
         }
         void Import(object sender, EventArgs args)

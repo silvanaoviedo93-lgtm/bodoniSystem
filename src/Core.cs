@@ -302,7 +302,8 @@ namespace Bodoni
             DateTime date;
             if (!DateTime.TryParseExact(draft.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date)) throw new ArgumentException("La fecha de emisión no es válida.");
             if (profile.PrintSeries) Add(result, "001-001-000", "Serie", 156.5, 9.0, 42.2, 8.5, true, false, false, profile);
-            Add(result, number, number == "PRUEBA" ? "Número de prueba" : "Número de nota", 156.5, 15.7, 42.2, 18, true, false, true, profile);
+            bool practiceNumber = Program.PracticeMode && number != "PRUEBA";
+            Add(result, practiceNumber ? "PRUEBA " + number : number, number == "PRUEBA" ? "Número de prueba" : "Número de nota", 156.5, 15.7, 42.2, practiceNumber ? 12 : 18, true, false, true, profile);
             Add(result, draft.Customer, "Cliente", 13.8, 37.2, 125, 8, false, false, false, profile);
             Add(result, date.ToString("dd/MM/yyyy"), "Fecha", 164.1, 37.2, 34.5, 8, false, false, false, profile);
             Add(result, draft.Address, "Dirección", 16.8, 44.3, 131, 8, false, false, false, profile);

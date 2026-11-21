@@ -69,6 +69,7 @@ namespace Bodoni
                 : issued ? "NOTA EMITIDA " + WorkNumber + " · Conserva su número al generar otro PDF o reimprimir. Usa Nueva para la siguiente venta."
                 : "BORRADOR · Los PDF de prueba no consumen numeración. Usa Emitir para asignar el número desde el principal.";
             networkNotice.BackColor = issued ? Color.FromArgb(221, 243, 230) : Color.FromArgb(255, 242, 210);
+            if (Program.PracticeMode) networkNotice.Text = "PRÁCTICA · " + networkNotice.Text;
         }
         void LoadNetwork()
         {
@@ -84,7 +85,7 @@ namespace Bodoni
             networkConfig = NetworkJson.Copy(config);
             if (networkConfig.Role == "Principal")
             {
-                numberServer = new NumberServer(networkConfig, NetworkConfig.LedgerPath, IPAddress.Any, networkConfig.Port);
+                numberServer = new NumberServer(networkConfig, NetworkConfig.LedgerPath, Program.PracticeMode ? IPAddress.Loopback : IPAddress.Any, networkConfig.Port);
                 if (!networkConfig.Initialized)
                 {
                     networkConfig.Initialized = true;
@@ -117,6 +118,7 @@ namespace Bodoni
         void ConfigureNetwork(object sender, EventArgs args)
         {
             if (networkBusy) return;
+            if (Program.PracticeMode) { ShowInfo("Modo de práctica: principal local en este computador, último inicial 004121, puerto 47832. Los datos se guardan en datos_practica. Para configurar principal o secundario de producción, cierra esta ventana y abre Bodoni.Red.exe normalmente."); return; }
             using (NetworkSetupForm dialog = new NetworkSetupForm(networkConfig))
             {
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
@@ -130,6 +132,7 @@ namespace Bodoni
         }
         void ExportConnection(object sender, EventArgs args)
         {
+            if (Program.PracticeMode) { ShowInfo("La práctica está aislada en este computador. Exporta la conexión desde el principal de producción cuando lo configures en la oficina."); return; }
             if (networkConfig == null || networkConfig.Role != "Principal" || numberServer == null) { ShowInfo("Exporta la conexión desde el equipo configurado como principal y con el servicio iniciado."); return; }
             using (SaveFileDialog dialog = new SaveFileDialog { Title = "Guardar conexión para los otros equipos de Bodoni", Filter = "Conexión Bodoni|*.bodoni-red.json", FileName = "Conexion-Bodoni.bodoni-red.json", DefaultExt = "bodoni-red.json", OverwritePrompt = true })
             {

@@ -9,6 +9,14 @@ namespace Bodoni
 {
     static class Program
     {
+        internal static bool PracticeMode;
+        internal static void PreparePractice()
+        {
+            Directory.CreateDirectory(Storage.Root);
+            if (File.Exists(NetworkConfig.ConfigPath)) return;
+            if (File.Exists(NetworkConfig.LedgerPath) || File.Exists(NetworkConfig.LedgerPath + ".inicializado")) throw new InvalidDataException("Falta la conexión del entorno de práctica existente. Recupera sus archivos; no se reiniciará.");
+            NetworkJson.Save(NetworkConfig.ConfigPath, NetworkConfig.Principal(4121, 47832));
+        }
         [STAThread]
         static int Main(string[] args)
         {
@@ -21,12 +29,17 @@ namespace Bodoni
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             if (args.Length > 0 && args[0] == "--ui-check") return CheckVisibleUi();
+            PracticeMode = args.Length > 0 && args[0] == "--practica";
+            if (PracticeMode) Storage.Root = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "datos_practica");
             try
             {
                 Directory.CreateDirectory(Storage.Root);
-                Storage.ImportLegacyPrintingAndDraft();
+                if (!PracticeMode) Storage.ImportLegacyPrintingAndDraft();
                 using (FileStream lease = new FileStream(Path.Combine(Storage.Root, "cliente-abierto.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+                {
+                    if (PracticeMode) PreparePractice();
                     Application.Run(new MainForm());
+                }
                 return 0;
             }
             catch (Exception ex)

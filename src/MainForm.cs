@@ -65,7 +65,7 @@ namespace Bodoni
 
         public MainForm()
         {
-            Text = "Bodoni · Notas de venta en red";
+            Text = Program.PracticeMode ? "Bodoni · PRÁCTICA · Datos separados de producción" : "Bodoni · Notas de venta en red";
             Font = new Font("Segoe UI", 9);
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(1120, 740); Size = new Size(1380, 900);
@@ -79,7 +79,7 @@ namespace Bodoni
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
             Controls.Add(root);
             Panel header = new Panel { Dock = DockStyle.Fill, BackColor = Ink };
-            header.Controls.Add(new Label { Text = "BODONI   /   Nota de venta", Dock = DockStyle.Fill, Font = new Font("Segoe UI", 20, FontStyle.Bold), ForeColor = Color.White, Padding = new Padding(14, 0, 0, 0), TextAlign = ContentAlignment.MiddleLeft });
+            header.Controls.Add(new Label { Text = Program.PracticeMode ? "BODONI   /   PRÁCTICA" : "BODONI   /   Nota de venta", Dock = DockStyle.Fill, Font = new Font("Segoe UI", 20, FontStyle.Bold), ForeColor = Color.White, Padding = new Padding(14, 0, 0, 0), TextAlign = ContentAlignment.MiddleLeft });
             root.Controls.Add(header, 0, 0);
             networkNotice = TextLabel("BORRADOR · Los PDF de prueba no consumen numeración. Usa Emitir para asignar el número desde el principal.");
             networkNotice.BackColor = Color.FromArgb(255, 242, 210); networkNotice.Padding = new Padding(10, 0, 0, 0); root.Controls.Add(networkNotice, 0, 1);
@@ -396,7 +396,7 @@ namespace Bodoni
             {
                 if (workflow != null && workflow.State.Pending) throw new InvalidOperationException("Primero recupera la emisión pendiente para saber qué número le asignó el principal.");
                 Draft draft = ReadDraft(); Bodoni.Layout.Build(draft, ActiveProfile, true, WorkNumber);
-                using (SaveFileDialog dialog = new SaveFileDialog { Title = includeTemplate ? "Guardar PDF completo con plantilla" : "Guardar PDF SOLO DATOS para papel preimpreso", Filter = "Documento PDF|*.pdf", DefaultExt = "pdf", FileName = "Bodoni-" + WorkNumber + (includeTemplate ? "-completa.pdf" : "-solo-datos.pdf"), InitialDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "entregables"), OverwritePrompt = true })
+                using (SaveFileDialog dialog = new SaveFileDialog { Title = includeTemplate ? "Guardar PDF completo con plantilla" : "Guardar PDF SOLO DATOS para papel preimpreso", Filter = "Documento PDF|*.pdf", DefaultExt = "pdf", FileName = "Bodoni-" + (Program.PracticeMode ? "PRACTICA-" : "") + WorkNumber + (includeTemplate ? "-completa.pdf" : "-solo-datos.pdf"), InitialDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "entregables"), OverwritePrompt = true })
                 {
                     if (dialog.ShowDialog(this) != DialogResult.OK) return;
                     SavePdfForMode(dialog.FileName, draft, includeTemplate);
