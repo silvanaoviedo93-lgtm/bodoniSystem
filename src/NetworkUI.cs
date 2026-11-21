@@ -114,7 +114,7 @@ namespace Bodoni
                 CentralStatus status = await Task.Factory.StartNew(delegate { return new NumberClient(config).Status(); });
                 if (IsDisposed || generation != connectionGeneration) return;
                 connected = true;
-                networkStatus.Text = (config.Role == "Principal" ? "PRINCIPAL" : config.Host) + " · Último " + status.LastNumber.ToString("D6") + " · Próximo " + (status.NextNumber > 999999 ? "agotado" : status.NextNumber.ToString("D6"));
+                networkStatus.Text = (config.Role == "Principal" ? "PRINCIPAL" : config.Host) + " · Último " + status.LastNumber.ToString("D6") + " · Próximo " + (status.NumberBlockReason != null ? "bloqueado por rango" : status.NextNumber > 999999 ? "agotado" : status.NextNumber.ToString("D6"));
                 networkStatus.ForeColor = Color.FromArgb(30, 105, 70);
                 AcceptAuthorizationStatus(status, true);
             }
@@ -161,7 +161,7 @@ namespace Bodoni
             {
                 CentralStatus status = await Task.Factory.StartNew(delegate { return new NumberClient(config).Status(); });
                 if (IsDisposed) return;
-                ShowInfo((Program.PracticeMode ? "PRÁCTICA · Datos separados de producción\n\n" : "") + "Principal: " + config.Host + "\nSerie: " + status.Series + "\nÚltima numeración utilizada: " + status.LastNumber.ToString("D6") + "\nSiguiente al emitir: " + (status.NextNumber > 999999 ? "agotado" : status.NextNumber.ToString("D6")) + "\nNotas registradas: " + status.Count + (status.NextNumber == status.LastNumber ? "\nLa última nota está anulada; el siguiente documento reemplazará ese número." : "") + "\n\n" + status.AuthorizationNotice + "\n\nConsultar no consume ni reserva números.");
+                ShowInfo((Program.PracticeMode ? "PRÁCTICA · Datos separados de producción\n\n" : "") + "Principal: " + config.Host + "\nSerie: " + status.Series + "\nÚltima numeración utilizada: " + status.LastNumber.ToString("D6") + "\nSiguiente al emitir: " + (status.NumberBlockReason != null ? "bloqueado por rango" : status.NextNumber > 999999 ? "agotado" : status.NextNumber.ToString("D6")) + "\nNotas registradas: " + status.Count + (status.NextNumber == status.LastNumber ? "\nLa última nota está anulada; el siguiente documento reemplazará ese número." : "") + "\n\n" + status.AuthorizationNotice + "\n\nConsultar no consume ni reserva números.");
             }
             catch (Exception ex) { if (!IsDisposed) ShowInfo("No se pudo consultar la numeración actual.\n\n" + ex.Message); }
             finally { networkBusy = false; if (!IsDisposed) UpdateWorkControls(); }

@@ -92,7 +92,7 @@ namespace Bodoni
                     Check(migrated.Status().LastNumber == 4121 && migrated.Status().Authorization.Number == original.Number, "Migrar un registro anterior añade la autorización sin reiniciar ni consumir números");
                 LedgerEnvelope migratedEnvelope = NetworkJson.Read<LedgerEnvelope>(legacyPath);
                 CentralState migratedState = NetworkJson.Parse<CentralState>(migratedEnvelope.Payload);
-                Check(migratedState.Version == 3, "La migración de autorización se guarda de forma durable antes de operar");
+                Check(migratedState.Version == 4, "La migración de autorización se guarda de forma durable antes de operar");
                 migratedState.Authorization = null;
                 string damagedPayload = NetworkJson.Serialize(migratedState);
                 NetworkJson.Save(legacyPath, new LedgerEnvelope { Payload = damagedPayload, Checksum = NetworkJson.Hash(damagedPayload) });
@@ -102,6 +102,45 @@ namespace Bodoni
                 Check(true, "Interfaz bloquea emisión por caducidad y por fecha fuera de vigencia; permite recuperar pendientes");
             }
             finally { AuthorizationRules.CurrentDate = suiteClock; }
+        }
+        static void VerifyNumberRange(string temp)
+        {
+            PrintAuthorization authorization = PrintAuthorization.OriginalTemplate(); int first, last;
+            Check(PrintAuthorization.TryReadNumberRange(authorization.Footer, out first, out last) && first == 4026 && last == 4225, "Rango autorizado extraído del pie: 004026 a 004225");
+            Check(AuthorizationRules.RemainingNumbers(authorization, 4215) == 11 && !AuthorizationRules.NumberNotice(authorization, 4215).Contains("ALERTA"), "Con próximo 004215 quedan 11 y todavía no se activa el umbral");
+            Check(AuthorizationRules.RemainingNumbers(authorization, 4216) == 10 && AuthorizationRules.NumberNotice(authorization, 4216).Contains("ALERTA"), "Alerta desde próximo 004216: exactamente 10 disponibles");
+            Check(AuthorizationRules.NumberBlockReason(authorization, 4025) != null && AuthorizationRules.NumberBlockReason(authorization, 4026) == null, "No se emiten números inferiores al inicio autorizado; inicio inclusive");
+            PrintAuthorization reversed = NetworkJson.Copy(authorization); reversed.Footer = reversed.Footer.Replace("4026-4225", "4225-4026");
+            Reject(delegate { reversed.Validate(); }, "Rango invertido rechazado al actualizar el pie");
+            PrintAuthorization missing = NetworkJson.Copy(authorization); missing.Footer = missing.Footer.Replace("# 4026-4225", "");
+            Reject(delegate { missing.Validate(); }, "Una renovación sin rango autorizado no se guarda");
+            NetworkConfig config = NetworkConfig.Principal(4214, 47831);
+            string path = Path.Combine(temp, "rango-autorizado", "registro.json");
+            using (NumberServer server = new NumberServer(config, path, IPAddress.Loopback, 0))
+            {
+                NetworkConfig connection = config.ForClient("127.0.0.1"); connection.Port = server.Port;
+                NumberClient client = new NumberClient(connection);
+                Check(client.Status().RemainingNumbers == 11, "El principal comunica los números disponibles sin consumirlos");
+                client.Issue(Guid.NewGuid().ToString("D"), Sample("UMBRAL"));
+                Check(client.Status().RemainingNumbers == 10 && client.Status().AuthorizationNotice.Contains("ALERTA"), "Emitir 004215 activa el aviso de los últimos diez en el estado central");
+                for (int i = 0; i < 9; i++) client.Issue(Guid.NewGuid().ToString("D"), Sample("TRAMO FINAL " + i));
+                Check(client.Status().NextNumber == 4225 && client.Status().RemainingNumbers == 1, "La última nota autorizada cuenta como una disponible");
+                ConcurrentBag<IssuedNote> successes = new ConcurrentBag<IssuedNote>();
+                ConcurrentBag<Exception> failures = new ConcurrentBag<Exception>();
+                Parallel.For(0, 2, delegate(int index) { try { successes.Add(new NumberClient(connection).Issue(Guid.NewGuid().ToString("D"), Sample("ÚLTIMA CONCURRENTE " + index))); } catch (Exception ex) { failures.Add(ex); } });
+                Check(successes.Count == 1 && successes.First().Number == 4225 && failures.Count == 1 && failures.First() is AuthorizationException, "Dos clientes disputan el último número: uno emite 004225 y el otro se bloquea");
+                Check(client.Status().RemainingNumbers == 0 && client.Status().LastNumber == 4225 && client.Status().NumberBlockReason != null, "Agotamiento bloquea nuevas emisiones sin avanzar a 004226");
+                IssuedNote final = successes.First();
+                Check(client.Issue(final.RequestId, final.Note).Number == 4225, "Recuperar la última emisión no consume ni exige otro número autorizado");
+                client.CancelLast(final.RequestId, "Corregir última del rango");
+                Check(client.Status().RemainingNumbers == 1 && client.Status().NextNumber == 4225, "Anular la última permite su reemplazo dentro del rango agotado");
+                Check(client.Issue(Guid.NewGuid().ToString("D"), Sample("REEMPLAZO FINAL")).Number == 4225 && client.Status().RemainingNumbers == 0, "Reemplazar el último número no habilita números fuera del rango");
+                PrintAuthorization renewed = client.Status().Authorization; renewed.Footer = renewed.Footer.Replace("4026-4225", "4226-4425");
+                client.UpdateAuthorization(renewed);
+                Check(client.Status().NextNumber == 4226 && client.Status().RemainingNumbers == 200, "Nuevo rango consecutivo reanuda disponibilidad sin reiniciar el contador");
+                Check(client.Issue(Guid.NewGuid().ToString("D"), Sample("NUEVO RANGO")).Number == 4226, "Primera nota del nuevo rango conserva la continuidad");
+            }
+            using (CentralLedger reopened = new CentralLedger(path, config)) Check(reopened.Status().LastNumber == 4226 && reopened.Status().RemainingNumbers == 199, "Reinicio conserva nuevo rango, numeración y disponibilidad");
         }
         public static int Run()
         {
@@ -275,6 +314,7 @@ namespace Bodoni
                 NetworkConfig initialized = NetworkJson.Copy(config); initialized.Initialized = true;
                 Reject(delegate { using (CentralLedger missing = new CentralLedger(Path.Combine(temp, "sin-datos", "registro.json"), initialized)) { } }, "La configuración de un principal existente también impide arrancar con datos vacíos");
                 VerifyAuthorization(temp, config); Storage.Root = originalRoot;
+                VerifyNumberRange(temp);
                 log.Add("ALCANCE: pruebas en TCP local con tres clientes; instalación y prueba entre computadoras físicas pendientes.");
             }
             catch (Exception ex) { result = 1; log.Add("ERROR - " + ex); if (NumberServer.LastUnexpectedFailure != null) log.Add("DETALLE DEL PRINCIPAL - " + NumberServer.LastUnexpectedFailure); }

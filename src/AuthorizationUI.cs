@@ -17,7 +17,7 @@ namespace Bodoni
             if (authorizationStatus == null) return "Conecta con el principal para comprobar la autorización del pie de imprenta.";
             DateTime today;
             if (!DateTime.TryParseExact(authorizationStatus.ServerDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out today)) return "No se pudo comprobar la fecha del principal.";
-            return AuthorizationRules.BlockReason(authorizationStatus.Authorization, today, date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            return AuthorizationRules.BlockReason(authorizationStatus.Authorization, today, date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)) ?? authorizationStatus.NumberBlockReason;
         }
         void UpdateAuthorizationControls()
         {
@@ -26,7 +26,7 @@ namespace Bodoni
             bool pending = workflow.State.Pending, issued = workflow.State.Issued != null;
             if (!pending && !issued && block != null) issueButton.Enabled = false;
             authorizationNotice.Text = block ?? authorizationStatus.AuthorizationNotice;
-            bool warning = block != null || authorizationStatus == null || authorizationStatus.AuthorizationNotice.IndexOf("caduca", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool warning = block != null || authorizationStatus == null || authorizationStatus.RemainingNumbers <= 10 || authorizationStatus.AuthorizationNotice.IndexOf("caduca", StringComparison.OrdinalIgnoreCase) >= 0;
             authorizationNotice.ForeColor = block != null ? Color.Firebrick : Color.FromArgb(112, 76, 0);
             authorizationNotice.BackColor = warning ? Color.FromArgb(255, 242, 210) : Color.FromArgb(235, 246, 239);
         }
@@ -35,8 +35,8 @@ namespace Bodoni
             authorizationStatus = status; UpdateWorkControls();
             DateTime today, end;
             if (!alert || status == null || status.Authorization == null || !DateTime.TryParse(status.ServerDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out today) || !DateTime.TryParse(status.Authorization.ExpiresOn, CultureInfo.InvariantCulture, DateTimeStyles.None, out end)) return;
-            string key = status.ServerId + ":" + status.Authorization.RevisionId + ":" + status.ServerDate;
-            if (((end.Date - today.Date).Days <= 14) && shownAuthorizationAlert != key)
+            string key = status.ServerId + ":" + status.Authorization.RevisionId + ":" + status.ServerDate + (status.RemainingNumbers <= 10 ? ":" + status.NextNumber : "");
+            if (((end.Date - today.Date).Days <= 14 || status.RemainingNumbers <= 10 || status.NumberBlockReason != null) && shownAuthorizationAlert != key)
             {
                 shownAuthorizationAlert = key; ShowInfo(status.AuthorizationNotice);
             }
@@ -72,6 +72,9 @@ namespace Bodoni
             date.Value = new DateTime(2026, 11, 20);
             authorizationStatus = new CentralStatus { Authorization = PrintAuthorization.OriginalTemplate(), ServerDate = "2026-11-20", AuthorizationNotice = "Vigente" };
             UpdateWorkControls(); if (!issueButton.Enabled) throw new Exception("No se habilitó la emisión vigente.");
+            authorizationStatus.NumberBlockReason = AuthorizationRules.NumberBlockReason(authorizationStatus.Authorization, 4226); UpdateWorkControls();
+            if (issueButton.Enabled || !authorizationNotice.Text.Contains("agotó")) throw new Exception("Falta el bloqueo de rango agotado en la interfaz.");
+            authorizationStatus.NumberBlockReason = null;
             date.Value = new DateTime(2027, 3, 10); UpdateWorkControls();
             if (issueButton.Enabled) throw new Exception("Se habilitó una fecha posterior a la caducidad.");
             date.Value = new DateTime(2026, 11, 20); authorizationStatus.ServerDate = "2027-03-10"; UpdateWorkControls();

@@ -26,7 +26,8 @@ namespace Bodoni
                 RevisionId = "plantilla-original-2026", SavedUtc = "2026-03-09T00:00:00Z"
             };
         }
-        public void Validate()
+        public void Validate() { Validate(true); }
+        public void Validate(bool requireRange)
         {
             DateTime start, end;
             if (String.IsNullOrWhiteSpace(Number) || Number.Length > 40) throw new ArgumentException("Ingresa el número de autorización de la nota (AUT. S.R.I.).");
@@ -38,6 +39,14 @@ namespace Bodoni
             DateTime footerStart, footerEnd;
             if (!TryReadFooterDates(Footer, out footerStart, out footerEnd)) throw new ArgumentException("El pie debe incluir Emisión: día/mes/año y Caduca: día/mes/año. Puedes escribir el mes con número o en español.");
             if (footerStart != start || footerEnd != end) throw new ArgumentException("Las fechas ingresadas no coinciden con Emisión y Caduca del pie de imprenta.");
+            int firstNumber, lastNumber;
+            if (requireRange && !TryReadNumberRange(Footer, out firstNumber, out lastNumber)) throw new ArgumentException("El pie debe incluir el rango autorizado, por ejemplo # 4026-4225, con números entre 1 y 999999.");
+        }
+        public static bool TryReadNumberRange(string footer, out int first, out int last)
+        {
+            first = last = 0;
+            MatchCollection ranges = Regex.Matches(footer ?? "", @"#\s*(\d{1,6})\s*[-–—]\s*(\d{1,6})(?!\d)");
+            return ranges.Count == 1 && Int32.TryParse(ranges[0].Groups[1].Value, out first) && Int32.TryParse(ranges[0].Groups[2].Value, out last) && first >= 1 && last >= first && last <= 999999;
         }
         public static bool TryReadFooterDates(string footer, out DateTime start, out DateTime end)
         {
@@ -56,6 +65,26 @@ namespace Bodoni
 
     public static class AuthorizationRules
     {
+        public static string NumberBlockReason(PrintAuthorization authorization, int nextNumber)
+        {
+            int first, last;
+            if (authorization == null || !PrintAuthorization.TryReadNumberRange(authorization.Footer, out first, out last)) return "Falta un rango válido en el pie de imprenta. Emisión bloqueada: registra el rango autorizado en el principal.";
+            if (nextNumber > last) return "Se agotó el rango autorizado " + first.ToString("D6") + "–" + last.ToString("D6") + ". Emisión bloqueada. Gestiona la renovación y actualiza el pie de imprenta.";
+            if (nextNumber < first) return "El próximo número " + nextNumber.ToString("D6") + " está por debajo del rango autorizado " + first.ToString("D6") + "–" + last.ToString("D6") + ". Emisión bloqueada; revisa el consecutivo y el pie de imprenta en el principal.";
+            return null;
+        }
+        public static int RemainingNumbers(PrintAuthorization authorization, int nextNumber)
+        {
+            int first, last;
+            return authorization != null && PrintAuthorization.TryReadNumberRange(authorization.Footer, out first, out last) && nextNumber >= first && nextNumber <= last ? last - nextNumber + 1 : 0;
+        }
+        public static string NumberNotice(PrintAuthorization authorization, int nextNumber)
+        {
+            string block = NumberBlockReason(authorization, nextNumber); if (block != null) return block;
+            int first, last; PrintAuthorization.TryReadNumberRange(authorization.Footer, out first, out last);
+            int remaining = RemainingNumbers(authorization, nextNumber);
+            return "Rango " + first.ToString("D6") + "–" + last.ToString("D6") + " · " + (remaining <= 10 ? "ALERTA: quedan solo " : "Quedan ") + remaining + " número(s) disponible(s).";
+        }
         // Mainland Ecuador's date; independent of the secondary computer's clock.
         internal static Func<DateTime> CurrentDate = delegate { return DateTime.UtcNow.AddHours(-5).Date; };
         public static string BlockReason(PrintAuthorization authorization, DateTime today, string noteDate)
