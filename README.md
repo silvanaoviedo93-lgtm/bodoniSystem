@@ -2,11 +2,19 @@
 
 La versión actual es **Bodoni.Red.exe**. Permite emitir notas con un único consecutivo desde 2 o 3 computadores conectados a un principal, consultar el historial compartido y generar PDF completos o solo datos. No requiere internet, pero sí conexión al principal para emitir.
 
-**La instalación se explica en [GUIA_RED.md](GUIA_RED.md).** El principal será otro computador, como indicó el usuario. El último número confirmado es **004121** y el siguiente previsto es **004122**. La instalación y prueba entre computadores físicos sigue pendiente.
+**La instalación se explica en [GUIA_RED.md](GUIA_RED.md).** El principal previsto tiene Windows 11. El último número real aún está por confirmar: **004121** es ahora la base de práctica, siguiente **004122**. La instalación y prueba entre computadores físicos sigue pendiente.
+
+Para practicar en un único equipo abre **Abrir_Practica.cmd**: utiliza `datos_practica`, conexión solo local y números identificados como PRUEBA en vista previa y PDF. No modifica producción y conserva el progreso al reabrir. Para configurar principal o secundario de producción abre **Bodoni.Red.exe** normalmente e ingresa el último real antes de inicializar el principal por primera vez.
+
+La barra incorpora **Última numeración**, **Anular última nota** y **Pie de imprenta**. Solo la última puede anularse y reemplazarse con su mismo número, conservando original, motivo, fecha e historial. Las anuladas no generan PDF válido. Actualiza todos los equipos juntos: esta versión utiliza protocolo TCP 4 y registro versión 4, con migración de registros anteriores.
+
+**Pie de imprenta:** autorización inicial 1133313444, emisión 09/03/2026, caducidad 09/03/2027. Avisa desde 14 días antes y bloquea nuevas emisiones después de caducar o si la fecha de la nota queda fuera de vigencia. La renovación se registra en el principal y conserva historial y numeración. Carga por separado la imagen del nuevo formulario con Cambiar plantilla. Instrucciones detalladas en GUIA_RED.md.
 
 Un borrador muestra **PRUEBA** y no consume número. Al pulsar **Emitir y asignar número** y confirmar una venta, el principal guarda la nota y asigna su número real. Generar otro PDF o reimprimir conserva ese número.
 
 ## Abrir y probar
+
+El pie autoriza **004026–004225**. La alerta de últimos diez comienza al quedar próximo **004216**; muestra la cantidad restante y bloquea al agotarse el rango. Para renovar, incluye el nuevo `# inicio-fin` y las fechas en **Pie de imprenta**, sin reiniciar la numeración. El control se realiza en el principal y se comparte con los secundarios.
 
 1. Abre **Bodoni.Red.exe** desde una carpeta local fija. Sigue GUIA_RED.md para configurar un solo principal y conectar los secundarios. Los prototipos anteriores se conservan pero no sincronizan números.
 2. La plantilla de Bodoni, con su logo y todos los textos fijos, aparece automáticamente junto con datos ficticios de $50 o el último borrador recuperado. Puedes pulsar **Nueva** para empezar en blanco o **Ejemplo $50** para volver a la muestra.

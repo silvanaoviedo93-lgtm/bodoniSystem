@@ -1,3 +1,4 @@
+OK - Anulación local conserva la original sin depender del cliente TCP
 OK - Último confirmado 004121; siguiente 004122 sin consumir al consultar
 OK - Un segundo proceso no puede abrir el mismo registro central
 OK - Una clave incorrecta no permite consultar ni emitir
@@ -54,6 +55,26 @@ OK - Reiniciar el principal conserva su contador aunque cambie el valor inicial 
 OK - Al reconectar se completa la solicitud guardada con el siguiente número central
 OK - Reintentar después de reconectar sigue sin duplicar numeración
 OK - Interfaz bloquea la edición de una nota emitida y genera PDF con su mismo número
+OK - Anulación exige un motivo y no modifica la secuencia
+OK - Anulación conserva nota, motivo y número
+OK - Última numeración y número disponible reflejan el reemplazo pendiente
+OK - Reintentar anulación conserva el registro original
+OK - Reintentar la emisión original devuelve la anulada, sin resucitarla
+OK - PDF válido bloqueado para una nota anulada
+OK - Nueva solicitud reemplaza solo el último número anulado
+OK - Original anulada y reemplazo permanecen consultables por separado
+OK - Historial muestra ambas versiones y motivo de anulación
+OK - Reintentar reemplazo no duplica ni consume otro número
+OK - No se puede anular para reutilizar una nota que tiene otra posterior
+OK - Reintentar anulación antigua no libera el número de un reemplazo vigente
+OK - Reinicio conserva historial de reemplazos y secuencia
+OK - Fallo durable de anulación no confirma el cambio
+OK - Fallo de anulación conserva nota vigente y contador
+OK - Reinicio con anulación pendiente conserva el número a reemplazar
+OK - Dos reemplazos concurrentes no asignan el mismo número vigente
+OK - Práctica configura principal local con último 004121 y puerto separado
+OK - Reabrir práctica conserva la identidad del principal
+OK - Vista previa y PDF de práctica identifican el número como PRUEBA
 OK - Fallo de guardado central no confirma la emisión
 OK - Un fallo de escritura no adelanta el contador en memoria ni guarda una nota parcial
 OK - Después del fallo el siguiente número sigue siendo 004122
@@ -61,5 +82,54 @@ OK - Un registro dañado bloquea la emisión y nunca reinicia el contador autom�
 OK - El registro dañado se conserva para recuperación
 OK - Si se borra el registro, su marca de inicialización impide reiniciar el contador
 OK - La configuración de un principal existente también impide arrancar con datos vacíos
+OK - Se conservan autorización y fechas del formulario recibido
+OK - No se adelanta la alerta a 15 días antes
+OK - Alerta desde exactamente dos semanas antes de caducar
+OK - El día de caducidad muestra aviso específico
+OK - Se permite emitir hasta el día de caducidad inclusive
+OK - Autorización caducada bloquea incluso una nota con fecha anterior
+OK - Fecha de nota posterior al vencimiento bloqueada aunque hoy esté vigente
+OK - Fecha de nota anterior a la autorización bloqueada
+OK - No se emite antes de comenzar la vigencia aunque la nota tenga fecha futura
+OK - No se guardan fechas que contradicen el texto del pie de imprenta
+OK - Emisión guarda una copia de la autorización usada junto con la nota
+OK - El principal comunica caducidad al cambiar el día sin reiniciar
+OK - Rechazo definitivo de autorización libera el borrador sin abandonar una emisión incierta
+OK - Emisión bloqueada por caducidad no consume numeración
+OK - Recuperar una nota ya emitida sigue permitido después de caducar
+OK - Renovar el pie de imprenta desbloquea la vigencia sin cambiar el contador
+OK - Renovación conserva el pie anterior en el historial central
+OK - Reintentar una renovación confirmada no duplica el historial
+OK - Una edición basada en una autorización anterior no sobrescribe la renovación
+OK - Nueva autorización rechaza la fecha del lote anterior
+OK - La emisión se reanuda con el siguiente número y fecha válidos
+OK - Renovación no modifica la autorización guardada en notas anteriores
+OK - Reinicio conserva vigencia, historial de autorización y numeración
+OK - Fallo durable de renovación se comunica sin confirmar el cambio
+OK - Fallo de renovación conserva autorización e historial anteriores
+OK - Migrar un registro anterior añade la autorización sin reiniciar ni consumir números
+OK - La migración de autorización se guarda de forma durable antes de operar
+OK - Un registro actual sin autorización se bloquea en vez de restaurar fechas iniciales
+OK - Interfaz bloquea emisión por caducidad y por fecha fuera de vigencia; permite recuperar pendientes
+OK - Rango autorizado extraído del pie: 004026 a 004225
+OK - Con próximo 004215 quedan 11 y todavía no se activa el umbral
+OK - Alerta desde próximo 004216: exactamente 10 disponibles
+OK - No se emiten números inferiores al inicio autorizado; inicio inclusive
+OK - Rango invertido rechazado al actualizar el pie
+OK - Una renovación sin rango autorizado no se guarda
+OK - El principal comunica los números disponibles sin consumirlos
+OK - Emitir 004215 activa el aviso de los últimos diez en el estado central
+OK - La última nota autorizada cuenta como una disponible
+OK - Dos clientes disputan el último número: uno emite 004225 y el otro se bloquea
+OK - Agotamiento bloquea nuevas emisiones sin avanzar a 004226
+OK - Recuperar la última emisión no consume ni exige otro número autorizado
+OK - Anular la última permite su reemplazo dentro del rango agotado
+OK - Reemplazar el último número no habilita números fuera del rango
+OK - Nuevo rango consecutivo reanuda disponibilidad sin reiniciar el contador
+OK - Primera nota del nuevo rango conserva la continuidad
+OK - Reinicio conserva nuevo rango, numeración y disponibilidad
+OK - Un bloqueo breve de Windows se reintenta conservando el reemplazo atómico
+OK - Un bloqueo persistente se comunica sin borrar ni sobrescribir el registro
+OK - El archivo anterior permanece íntegro si no se libera el bloqueo
 ALCANCE: pruebas en TCP local con tres clientes; instalación y prueba entre computadoras físicas pendientes.
 RESULTADO: TODAS LAS COMPROBACIONES DE RED CORRECTAS

@@ -2,7 +2,40 @@
 
 Esta versión usa **un computador principal** para guardar las notas emitidas y asignar sus números. Los otros 1 o 2 equipos se conectan a ese mismo principal. El principal también puede emitir notas.
 
-El usuario confirmó que el principal será **otro computador** y que el último número utilizado es **004121**. La primera emisión de una instalación nueva recibirá **004122**, con la serie **001-001-000**.
+El principal de producción previsto tiene **Windows 11**. El último número real aún debe confirmarse. **004121** es la base de práctica, siguiente **004122**, serie **001-001-000**. Todos los equipos deben usar esta misma versión actualizada (protocolo 4, registro 4 con migración de versiones anteriores); no abrir un registro actualizado con ejecutables anteriores.
+
+## Vigencia de autorización y pie de imprenta
+
+**Rango y últimos diez:** el pie original autoriza **004026–004225**. El programa extrae ese rango del texto `# 4026-4225`, muestra cuántos números quedan y alerta desde próximo **004216** (10 disponibles, contando el siguiente). Con próximo 004215 quedan 11. Después de emitir 004225, bloquea nuevas notas hasta registrar una autorización y rango compatibles. El control está en el principal y también se muestra en los secundarios, en la barra y en Última numeración. El aviso permanece visible y aparece al abrir o al cambiar el número disponible mientras Bodoni está abierto.
+
+Al renovar, incluye el nuevo `# inicio-fin` en el pie completo junto con las fechas. La pantalla muestra el rango extraído. No se reinicia ni se salta el contador: si el próximo número queda fuera del nuevo rango, la emisión sigue bloqueada. Anular la última del rango permite reemplazar ese mismo número según la regla acordada, sin habilitar uno fuera del rango. Recuperar una nota ya emitida sigue permitido aun al agotarse los números.
+
+La barra muestra permanentemente el estado de la autorización consultada al principal. Los datos iniciales corresponden a las imágenes recibidas: **AUT. S.R.I. 1133313444**, emisión del pie **09/03/2026**, caducidad **09/03/2027**. No confundir ese número con la **Aut. 13485** de la imprenta.
+
+- Desde **23/02/2027**, avisa que quedan 14 días o menos. Muestra un mensaje al abrir o al cambiar el día mientras Bodoni permanezca abierto, además del estado visible. No genera notificaciones con el programa cerrado.
+- El **09/03/2027** muestra «caduca HOY» y todavía permite emitir.
+- Desde **10/03/2027**, bloquea Emitir e informa que la autorización está caducada. Poner una fecha anterior en la nota no evita el bloqueo.
+- La fecha de cada nota debe quedar entre emisión y caducidad del pie. El principal vuelve a comprobarlo antes de guardar y asignar número. El control usa la fecha del principal en Ecuador continental, no la del secundario.
+
+Después de gestionar una renovación, abre **Pie de imprenta** en el principal. Ingresa el nuevo número AUT. S.R.I. y copia el texto completo del pie, con **Emisión: día/mes/año** y **Caduca: día/mes/año** (mes numérico o en español). Las fechas se extraen al escribir; revisa los campos y pulsa **Guardar pie de imprenta**. Si no coinciden con el texto, el guardado se bloquea. Los secundarios consultan la actualización automáticamente y tienen esta pantalla en modo consulta.
+
+Se conserva el historial del pie anterior y cada nueva nota guarda una copia de su autorización. Renovar no reinicia el consecutivo ni cambia emitidas. Recuperar una solicitud ya emitida sigue permitido aunque su autorización haya caducado. Si el principal confirma que una solicitud no se emitió por autorización, se devuelve a borrador para corregirla; si se pierde la conexión, se mantiene pendiente.
+
+Guardar el pie no modifica la imagen de fondo. Usa **Cambiar plantilla** en cada equipo para cargar la imagen del formulario renovado; el papel preimpreso debe corresponder a esa autorización. El PDF solo datos no vuelve a imprimir el pie ni la autorización. La configuración de práctica conserva estos mismos controles en sus datos separados.
+
+## Practicar desde un solo computador
+
+Abre **Abrir_Practica.cmd**. El encabezado indicará PRÁCTICA y se creará `datos_practica`, separado de los datos normales. Inicia un principal local en el puerto 47832, accesible solo desde este equipo. No requiere red de oficina ni cambios del firewall. La primera emisión de práctica será 004122; reabrir conserva el progreso y las pendientes. Sus PDF muestran PRUEBA junto al número. Esta numeración no se traslada a producción.
+
+Para producción, cierra la práctica y abre **Bodoni.Red.exe** normalmente. En **Red y numeración** configura principal o secundario. Antes de inicializar por primera vez el principal, ingresa el último número real. No copies `datos_practica` a `datos_bodoni` ni cambies el contador de un principal ya inicializado.
+
+## Consultar la numeración y reemplazar la última nota
+
+**Última numeración** consulta el principal y muestra último número utilizado y siguiente disponible, sin consumir ni reservar números. Si la última está anulada, el siguiente disponible es su mismo número.
+
+Abre la nota desde **Historial**, pulsa **Anular última nota**, escribe el motivo y confirma. Se conserva la original con fecha y motivo. Pulsa **Nueva**, prepara el documento corregido y emítelo: si sigue disponible, recibirá ese número. Si otro equipo ya lo reemplazó, se asignará el siguiente disponible. No se puede liberar el número de una nota con otra vigente posterior.
+
+El historial conserva la original y todos sus reemplazos. Repetir la anulación de la original no anula su reemplazo. Si se pierde la respuesta, consulta Historial o reintenta sobre la misma nota. Exportar una emitida requiere consultar su vigencia en el principal y bloquea las anuladas. Los PDF o impresos anteriores quedan fuera del control del programa: retíralos del uso operativo al reemplazarlos.
 
 ## 1. Preparar el computador principal
 
@@ -10,8 +43,8 @@ El usuario confirmó que el principal será **otro computador** y que el último
 2. Usa **Extraer todo** y guarda la carpeta en una ubicación fija local, por ejemplo Documentos\Bodoni. No ejecutes el programa directamente desde el ZIP ni desde una carpeta compartida.
 3. Abre **Bodoni.Red.exe**.
 4. Pulsa **Red y numeración** y selecciona **Este computador es el principal**.
-5. Deja el puerto **47831** y verifica **Último número utilizado: 4121**. Si ya se han emitido más notas al instalar, coloca el último real antes de iniciar por primera vez.
-6. Pulsa **Guardar y conectar**. Debe aparecer **PRINCIPAL · Último 004121 · Próximo 004122**. Configurar o consultar la conexión no consume números.
+5. Deja el puerto **47831** e ingresa el **último número real utilizado**, confirmado en la oficina. El valor 4121 es únicamente una referencia de práctica.
+6. Pulsa **Guardar y conectar**. Debe aparecer **PRINCIPAL**, con el último ingresado y su siguiente. Configurar o consultar no consume números.
 7. Mantén el programa abierto y el computador encendido mientras los demás trabajen. Si el equipo se suspende o se cierra Bodoni, los demás no podrán emitir hasta recuperar la conexión.
 
 En una instalación existente se conserva el consecutivo guardado: cambiar el campo inicial no lo reinicia. Si faltan o están dañados los datos de un principal ya inicializado, la aplicación detiene la emisión en lugar de volver a 4121.
@@ -76,7 +109,7 @@ No se habilita otra emisión para sustituir una pendiente. Cerrar y volver a abr
 
 Pulsa **Historial** para consultar las últimas 200 notas emitidas en el principal, incluidas las emitidas desde otros equipos. Selecciona una y pulsa **Abrir para consultar o reimprimir**. Sus PDF conservarán el número original.
 
-Para otra venta, pulsa **Nueva**. La edición de notas emitidas, anulación y herramientas de restauración quedan para una entrega posterior; en esta versión las notas guardadas se conservan sin cambios y sus números no se reutilizan.
+Para otra venta, pulsa **Nueva**. Las notas emitidas conservan su contenido; la corrección de la última se realiza con anulación y reemplazo según la sección anterior. Las herramientas de restauración siguen pendientes.
 
 ## 8. Dónde se conservan los datos
 

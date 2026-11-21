@@ -1,6 +1,20 @@
 # Entrega — Numeración central compartida
 
-Estado: implementación y paquete preparados; instalación en el principal físico y comprobación entre computadoras pendientes.
+Estado al 20/11/2026: práctica aislada, consulta de numeración y anulación/reemplazo de la última nota implementados. Instalación y comprobación entre computadoras físicas pendientes.
+
+Revisión de rango: **004026–004225**, alerta desde próximo 004216 (10 disponibles), bloqueo al agotar el rango y actualización desde el pie completo al renovar. Protocolo/registro actuales 4, con migración de 1/2/3. **44 verificaciones generales y 133 de red correctas**. Incluye límites 11/10/1/0, rechazo de rangos inválidos, concurrencia sobre 004225, reintentos, anulación y reemplazo de la última del rango, continuidad tras renovar y persistencia al reiniciar. Captura de Pie de imprenta revisada con rango visible. Pruebas aisladas; sin consumo de números de producción.
+
+Revisión posterior del mismo día: implementado **Pie de imprenta** y control de autorización central, con alerta desde 14 días antes, bloqueo después de caducar y bloqueo de fecha fuera de vigencia. Datos iniciales: autorización 1133313444, emisión 09/03/2026, caducidad 09/03/2027. Renovación solo desde el principal, historial durable y copia en nuevas notas. Protocolo y registro versión 4, con migración de registros 1/2. Guardar el pie no altera el fondo: cargar la imagen del formulario renovado con Cambiar plantilla.
+
+Resultado actual: **44 comprobaciones generales y 116 de red correctas**, más captura de ventana principal y pantalla de pie de imprenta. Se verificaron día 15/14, día de caducidad y posterior, fecha inválida del documento, bloqueo sin consumir número, recuperación de emitidas después de caducar, renovación/reinicio/historial, fallos de guardado y controles de interfaz. También se reproduce un bloqueo de archivo breve y uno persistente: se reintenta únicamente el reemplazo atómico ante errores transitorios de Windows; el bloqueo persistente falla conservando el archivo anterior. No se configuró producción ni se alteraron sus datos para probar.
+
+Actualización: el usuario dispone ahora de un único equipo; el principal previsto tiene Windows 11. 4121 es base de práctica y no el último real confirmado de producción. Abrir_Practica.cmd crea un principal solo local con datos separados, puerto 47832 y siguiente 004122. En producción se mantiene la configuración de roles y el último inicial editable antes de inicializar por primera vez.
+
+Se permite anular y reemplazar solo la última nota, conservando original, motivo, fecha e historial. La numeración no retrocede; el siguiente disponible reutiliza el último número mientras esté anulado. Reintentar la original no la reactiva. Las notas anteriores con otra vigente posterior no liberan números. El PDF de una emitida requiere consultar vigencia en el principal y bloquea las anuladas; archivos previamente exportados no se retiran automáticamente.
+
+Verificación actual: compilación correcta, **44 comprobaciones generales y 84 de red**, más apertura y captura de interfaz con los nuevos botones. Incluye reinicio con reemplazo pendiente, reintentos, dos emisiones concurrentes después de anular, conservación de ambas versiones y fallo durable de anulación. Todo utiliza datos aislados y TCP local; no se inicializó producción ni se configuró su firewall. Se observaron fallos transitorios de persistencia durante las primeras ejecuciones; fueron rechazados por el principal y las dos últimas ejecuciones completas de red finalizaron correctamente.
+
+El protocolo TCP y el registro son versión 4; se migran registros previos. Actualizar todos los equipos juntos y no volver a abrir el registro actualizado con un ejecutable anterior. Los apartados siguientes son la revisión histórica de la primera entrega; prevalece esta actualización.
 
 ## Confirmado por el usuario
 

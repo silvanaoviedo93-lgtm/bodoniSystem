@@ -1,10 +1,13 @@
+param([string]$EjecutableOrigen = 'Bodoni.Red.exe')
 $ErrorActionPreference = 'Stop'
 $packagePath = Join-Path $PSScriptRoot 'entregables\Bodoni-Red'
 New-Item -ItemType Directory -Path $packagePath -Force | Out-Null
-$names = @('Bodoni.Red.exe', 'GUIA_RED.md', 'Habilitar_Red.ps1', 'Habilitar_Red.cmd')
+$names = @('Bodoni.Red.exe', 'Abrir_Practica.cmd', 'GUIA_RED.md', 'Habilitar_Red.ps1', 'Habilitar_Red.cmd')
 $packageFiles = @()
 foreach ($name in $names) {
-    $source = Join-Path $PSScriptRoot $name
+    $sourceName = $name
+    if ($name -eq 'Bodoni.Red.exe') { $sourceName = $EjecutableOrigen }
+    $source = Join-Path $PSScriptRoot $sourceName
     if (-not (Test-Path -LiteralPath $source)) { throw "Falta el archivo $name" }
     $target = Join-Path $packagePath $name
     Copy-Item -LiteralPath $source -Destination $target -Force
@@ -17,10 +20,18 @@ BODONI - NUMERACION COMPARTIDA
 1. Extrae todo el ZIP a una carpeta fija local antes de abrir el programa.
 2. Lee GUIA_RED.md. Elige UN SOLO computador como principal.
 3. En el principal: Bodoni.Red.exe > Red y numeracion > Este computador es el principal.
-4. Ultimo numero confirmado: 4121; siguiente previsto: 004122.
+4. En produccion, confirma e ingresa el ultimo numero real antes de inicializar.
 5. Exporta la conexion del principal e importala en los secundarios.
 
 El principal debe estar encendido y con Bodoni abierto mientras se emita.
+Para practicar en un solo computador: abre Abrir_Practica.cmd.
+La practica utiliza datos_practica y comienza con ultimo 004121, siguiente 004122.
+No copies datos_practica a produccion. No requiere abrir el firewall.
+Todos los equipos deben utilizar esta misma version actualizada.
+Pie de imprenta: consulta y renueva la autorizacion desde el principal.
+Se avisa desde 14 dias antes y se bloquean nuevas emisiones al caducar.
+Tambien se avisa al quedar 10 numeros del rango autorizado del pie.
+Si se agota el rango, se bloquea la emision hasta registrar su renovacion.
 Los PDF de borradores muestran PRUEBA y no consumen numeros.
 Emitir y asignar numero guarda una venta REAL en el principal.
 

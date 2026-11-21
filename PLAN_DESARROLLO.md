@@ -1,6 +1,14 @@
-﻿# Plan de desarrollo — Bodoni para Windows
+# Plan de desarrollo — Bodoni para Windows
 
 Estado: impresión al tamaño correcto confirmada por el usuario. Se adelantó la sincronización por red antes del cotizador. La versión de red está implementada y probada con clientes TCP locales; la instalación en los computadores físicos está pendiente.
+
+## Actualización vigente — 20/11/2026
+
+Control adicional de rango: autorizado 004026–004225 según el pie. Alerta al quedar 10 números disponibles (próximo 004216); bloqueo al agotarse o quedar fuera del rango. La renovación incluye rango y fechas, mantiene contador e historial. El principal valida también ante emisiones concurrentes. Protocolo y registro actuales: versión 4, con migración de registros anteriores.
+
+Se añade control central de autorización y pie de imprenta: AUT. S.R.I. 1133313444, emisión 09/03/2026, caducidad 09/03/2027. Aviso desde 23/02/2027 (14 días antes), permiso hasta 09/03/2027 inclusive y bloqueo desde 10/03/2027. La fecha de la nota también debe quedar dentro de la vigencia. Pantalla Pie de imprenta para registrar renovación con historial, sin reiniciar la secuencia. Los secundarios consultan la misma vigencia; recuperar una nota emitida previamente sigue permitido. No hay alertas con el programa cerrado. Actualizar todos los equipos juntos: protocolo y registro versión 4.
+
+El usuario dispone ahora de un único computador; el principal previsto tiene Windows 11. Se incorpora práctica aislada mediante Abrir_Practica.cmd (último inicial 004121, siguiente 004122), configuración de roles para producción y consulta explícita de numeración. Por decisión posterior, la última nota puede anularse y reemplazarse con el mismo número, conservando la original, motivo, fecha e historial. No se reutilizan números de notas que tienen otra vigente posterior. El último real de producción es desconocido y debe ingresarse antes de inicializar el principal. Estas decisiones sustituyen las reglas históricas de no reutilización que aparecen debajo. La validación entre equipos físicos sigue pendiente.
 
 ## 1. Objetivo y orden de trabajo
 
