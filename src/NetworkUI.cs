@@ -22,16 +22,19 @@ namespace Bodoni
 
         Control BuildNetworkBar()
         {
-            TableLayoutPanel bar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Color.White };
-            bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 575)); bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            TableLayoutPanel bar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Color.White };
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            bar.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
             bar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             FlowLayoutPanel actions = Flow();
             actions.Controls.Add(Button("Red y numeración", ConfigureNetwork));
             issueButton = Button("Emitir y asignar número", IssueCurrent); issueButton.BackColor = Blue; issueButton.ForeColor = Color.White; issueButton.Enabled = false;
             actions.Controls.Add(issueButton); actions.Controls.Add(Button("Historial", ShowHistory)); actions.Controls.Add(Button("Exportar conexión", ExportConnection));
+            actions.Controls.Add(Button("Última numeración", ShowNumbering));
             bar.Controls.Add(actions, 0, 0);
             networkStatus = TextLabel("Sin principal configurado · Los borradores no consumen números."); networkStatus.MinimumSize = new Size(260, 30); networkStatus.Padding = new Padding(8, 0, 0, 0);
-            bar.Controls.Add(networkStatus, 1, 0); return bar;
+            bar.Controls.Add(networkStatus, 0, 1);
+            return bar;
         }
         void RestoreWork()
         {
@@ -140,6 +143,21 @@ namespace Bodoni
                 try { NetworkJson.Save(dialog.FileName, networkConfig.ForClient(String.IsNullOrWhiteSpace(networkConfig.Host) || networkConfig.Host == "127.0.0.1" ? Environment.MachineName : networkConfig.Host)); ShowInfo("Conexión exportada. Copia este archivo a los otros equipos e impórtalo en Red y numeración. Si el nombre del principal no responde, usa su dirección IP en esos equipos."); }
                 catch (Exception ex) { ShowInfo("No se pudo exportar la conexión.\n\n" + ex.Message); }
             }
+        }
+        async void ShowNumbering(object sender, EventArgs args)
+        {
+            if (networkBusy) return;
+            if (networkConfig == null) { ShowInfo("Configura primero el principal en Red y numeración."); return; }
+            networkBusy = true; UpdateWorkControls();
+            NetworkConfig config = NetworkJson.Copy(networkConfig);
+            try
+            {
+                CentralStatus status = await Task.Factory.StartNew(delegate { return new NumberClient(config).Status(); });
+                if (IsDisposed) return;
+                ShowInfo((Program.PracticeMode ? "PRÁCTICA · Datos separados de producción\n\n" : "") + "Principal: " + config.Host + "\nSerie: " + status.Series + "\nÚltima numeración utilizada: " + status.LastNumber.ToString("D6") + "\nSiguiente al emitir: " + (status.NextNumber > 999999 ? "agotado" : status.NextNumber.ToString("D6")) + "\nNotas registradas: " + status.Count + (status.NextNumber == status.LastNumber ? "\nLa última nota está anulada; el siguiente documento reemplazará ese número." : "") + "\n\nConsultar no consume ni reserva números.");
+            }
+            catch (Exception ex) { if (!IsDisposed) ShowInfo("No se pudo consultar la numeración actual.\n\n" + ex.Message); }
+            finally { networkBusy = false; if (!IsDisposed) UpdateWorkControls(); }
         }
         async void IssueCurrent(object sender, EventArgs args)
         {
