@@ -57,6 +57,13 @@ namespace Bodoni
             Draft normalized = NoteRules.Normalize(draft);
             Persist(new WorkState { Draft = normalized, RequestId = Guid.NewGuid().ToString("D"), ServerId = serverId, Pending = true });
         }
+        // Only after an authenticated, definitive authorization rejection.
+        // The principal checks for an existing receipt before it can reject.
+        internal void ReleaseRejectedAuthorization()
+        {
+            if (!State.Pending || State.Issued != null) return;
+            Persist(new WorkState { Draft = NetworkJson.Copy(State.Draft) });
+        }
         void ValidateReceipt(IssuedNote receipt)
         {
             if (receipt.RequestId != State.RequestId || receipt.ServerId != State.ServerId || receipt.Series != "001-001-000" || receipt.Number < 1 || receipt.Number > 999999 || receipt.Fingerprint != NoteRules.Fingerprint(State.Draft) || receipt.Fingerprint != NoteRules.Fingerprint(receipt.Note) || receipt.Total != Calculation.Total(Calculation.Lines(receipt.Note)))

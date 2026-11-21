@@ -24,11 +24,92 @@ namespace Bodoni
         {
             Draft draft = Draft.Sample(); draft.Customer = "SIMULACIÓN DE RED · " + name; draft.Date = "2026-11-12"; return draft;
         }
+        static void VerifyAuthorization(string temp, NetworkConfig config)
+        {
+            PrintAuthorization original = PrintAuthorization.OriginalTemplate(); original.Validate();
+            Check(original.Number == "1133313444" && original.StartsOn == "2026-03-09" && original.ExpiresOn == "2027-03-09", "Se conservan autorización y fechas del formulario recibido");
+            Check(!AuthorizationRules.Notice(original, new DateTime(2027, 2, 22)).Contains("caduca en"), "No se adelanta la alerta a 15 días antes");
+            Check(AuthorizationRules.Notice(original, new DateTime(2027, 2, 23)).Contains("caduca en 14"), "Alerta desde exactamente dos semanas antes de caducar");
+            Check(AuthorizationRules.Notice(original, new DateTime(2027, 3, 9)).Contains("HOY"), "El día de caducidad muestra aviso específico");
+            Check(AuthorizationRules.BlockReason(original, new DateTime(2027, 3, 9), "2027-03-09") == null, "Se permite emitir hasta el día de caducidad inclusive");
+            Check(AuthorizationRules.BlockReason(original, new DateTime(2027, 3, 10), "2027-03-09").Contains("caducada"), "Autorización caducada bloquea incluso una nota con fecha anterior");
+            Check(AuthorizationRules.BlockReason(original, new DateTime(2026, 11, 20), "2027-03-10") != null, "Fecha de nota posterior al vencimiento bloqueada aunque hoy esté vigente");
+            Check(AuthorizationRules.BlockReason(original, new DateTime(2026, 11, 20), "2026-03-08") != null, "Fecha de nota anterior a la autorización bloqueada");
+            Check(AuthorizationRules.BlockReason(original, new DateTime(2026, 3, 8), "2026-03-09") != null, "No se emite antes de comenzar la vigencia aunque la nota tenga fecha futura");
+            PrintAuthorization inconsistent = NetworkJson.Copy(original); inconsistent.ExpiresOn = "2028-03-09";
+            Reject(delegate { inconsistent.Validate(); }, "No se guardan fechas que contradicen el texto del pie de imprenta");
+            Func<DateTime> suiteClock = AuthorizationRules.CurrentDate;
+            DateTime simulated = new DateTime(2027, 3, 9);
+            AuthorizationRules.CurrentDate = delegate { return simulated; };
+            string path = Path.Combine(temp, "autorizacion", "registro.json");
+            string firstRequest = Guid.NewGuid().ToString("D");
+            try
+            {
+                using (NumberServer server = new NumberServer(config, path, IPAddress.Loopback, 0))
+                {
+                    NetworkConfig clientConfig = config.ForClient("127.0.0.1"); clientConfig.Port = server.Port;
+                    NumberClient client = new NumberClient(clientConfig);
+                    Draft valid = Sample("DÍA DE CADUCIDAD"); valid.Date = "2027-03-09";
+                    IssuedNote issued = client.Issue(firstRequest, valid);
+                    Check(issued.Number == 4122 && issued.Authorization.Number == original.Number, "Emisión guarda una copia de la autorización usada junto con la nota");
+                    simulated = new DateTime(2027, 3, 10);
+                    Check(client.Status().AuthorizationNotice.Contains("caducada"), "El principal comunica caducidad al cambiar el día sin reiniciar");
+                    IssueWorkflow pending = new IssueWorkflow(Path.Combine(temp, "autorizacion-cliente", "tramite.json"), valid); pending.Prepare(valid, config.ServerId);
+                    bool definitive = false;
+                    try { client.Issue(pending.State.RequestId, pending.State.Draft); }
+                    catch (AuthorizationException) { definitive = true; pending.ReleaseRejectedAuthorization(); }
+                    Check(definitive && !pending.State.Pending && pending.State.Draft.Customer == valid.Customer, "Rechazo definitivo de autorización libera el borrador sin abandonar una emisión incierta");
+                    Check(client.Status().LastNumber == 4122 && client.Status().NextNumber == 4123, "Emisión bloqueada por caducidad no consume numeración");
+                    Check(client.Issue(firstRequest, valid).Number == 4122, "Recuperar una nota ya emitida sigue permitido después de caducar");
+                    PrintAuthorization renewed = client.Status().Authorization;
+                    renewed.Number = "9999999999"; renewed.StartsOn = "2027-03-10"; renewed.ExpiresOn = "2028-03-10";
+                    renewed.Footer = "IMPRENTA RENOVADA # 4026-4225 * Emisión: 10/Marzo/2027 * Caduca: 10/Marzo/2028";
+                    CentralStatus newStatus = client.UpdateAuthorization(renewed);
+                    Check(newStatus.Authorization.Number == renewed.Number && newStatus.LastNumber == 4122, "Renovar el pie de imprenta desbloquea la vigencia sin cambiar el contador");
+                    Check(client.AuthorizationHistory().Count == 1 && client.AuthorizationHistory()[0].Number == original.Number, "Renovación conserva el pie anterior en el historial central");
+                    client.UpdateAuthorization(renewed);
+                    Check(client.AuthorizationHistory().Count == 1, "Reintentar una renovación confirmada no duplica el historial");
+                    PrintAuthorization stale = NetworkJson.Copy(original); stale.Number = "8888888888";
+                    Reject(delegate { client.UpdateAuthorization(stale); }, "Una edición basada en una autorización anterior no sobrescribe la renovación");
+                    Reject(delegate { client.Issue(Guid.NewGuid().ToString("D"), valid); }, "Nueva autorización rechaza la fecha del lote anterior");
+                    Draft next = Sample("NUEVA AUTORIZACIÓN"); next.Date = "2027-03-10";
+                    Check(client.Issue(Guid.NewGuid().ToString("D"), next).Number == 4123, "La emisión se reanuda con el siguiente número y fecha válidos");
+                    Check(client.Find(firstRequest).Authorization.Number == original.Number, "Renovación no modifica la autorización guardada en notas anteriores");
+                }
+                using (CentralLedger ledger = new CentralLedger(path, config))
+                {
+                    Check(ledger.Status().Authorization.Number == "9999999999" && ledger.GetAuthorizationHistory().Count == 1 && ledger.Status().LastNumber == 4123, "Reinicio conserva vigencia, historial de autorización y numeración");
+                    PrintAuthorization failed = ledger.Status().Authorization; failed.Number = "7777777777";
+                    ledger.BeforeCommit = delegate { throw new IOException("Fallo de guardado de autorización"); };
+                    Reject(delegate { ledger.UpdateAuthorization(failed); }, "Fallo durable de renovación se comunica sin confirmar el cambio");
+                    Check(ledger.Status().Authorization.Number == "9999999999" && ledger.GetAuthorizationHistory().Count == 1, "Fallo de renovación conserva autorización e historial anteriores");
+                }
+                string legacyPath = Path.Combine(temp, "autorizacion-legado", "registro.json");
+                CentralState legacy = new CentralState { Version = 2, ServerId = config.ServerId, Series = "001-001-000", InitialLast = 4121, LastNumber = 4121, Notes = new List<IssuedNote>(), CancelledHistory = new List<IssuedNote>() };
+                string legacyPayload = NetworkJson.Serialize(legacy);
+                NetworkJson.Save(legacyPath, new LedgerEnvelope { Payload = legacyPayload, Checksum = NetworkJson.Hash(legacyPayload) });
+                using (CentralLedger migrated = new CentralLedger(legacyPath, config))
+                    Check(migrated.Status().LastNumber == 4121 && migrated.Status().Authorization.Number == original.Number, "Migrar un registro anterior añade la autorización sin reiniciar ni consumir números");
+                LedgerEnvelope migratedEnvelope = NetworkJson.Read<LedgerEnvelope>(legacyPath);
+                CentralState migratedState = NetworkJson.Parse<CentralState>(migratedEnvelope.Payload);
+                Check(migratedState.Version == 3, "La migración de autorización se guarda de forma durable antes de operar");
+                migratedState.Authorization = null;
+                string damagedPayload = NetworkJson.Serialize(migratedState);
+                NetworkJson.Save(legacyPath, new LedgerEnvelope { Payload = damagedPayload, Checksum = NetworkJson.Hash(damagedPayload) });
+                Reject(delegate { using (CentralLedger invalid = new CentralLedger(legacyPath, config)) { } }, "Un registro actual sin autorización se bloquea en vez de restaurar fechas iniciales");
+                Storage.Root = Path.Combine(temp, "autorizacion-interfaz"); Directory.CreateDirectory(Storage.Root);
+                using (MainForm form = new MainForm()) form.VerifyAuthorizationUi(config);
+                Check(true, "Interfaz bloquea emisión por caducidad y por fecha fuera de vigencia; permite recuperar pendientes");
+            }
+            finally { AuthorizationRules.CurrentDate = suiteClock; }
+        }
         public static int Run()
         {
             string output = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "entregables"); Directory.CreateDirectory(output);
             string temp = Path.Combine(output, "red-test-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(temp);
             string originalRoot = Storage.Root; int result = 0;
+            Func<DateTime> originalClock = AuthorizationRules.CurrentDate;
+            AuthorizationRules.CurrentDate = delegate { return new DateTime(2026, 11, 20); };
             try
             {
                 NetworkConfig config = NetworkConfig.Principal(4121, 47831);
@@ -193,12 +274,14 @@ namespace Bodoni
                 Reject(delegate { using (CentralLedger deleted = new CentralLedger(failurePath, config)) { } }, "Si se borra el registro, su marca de inicialización impide reiniciar el contador");
                 NetworkConfig initialized = NetworkJson.Copy(config); initialized.Initialized = true;
                 Reject(delegate { using (CentralLedger missing = new CentralLedger(Path.Combine(temp, "sin-datos", "registro.json"), initialized)) { } }, "La configuración de un principal existente también impide arrancar con datos vacíos");
+                VerifyAuthorization(temp, config); Storage.Root = originalRoot;
                 log.Add("ALCANCE: pruebas en TCP local con tres clientes; instalación y prueba entre computadoras físicas pendientes.");
             }
-            catch (Exception ex) { result = 1; log.Add("ERROR - " + ex); }
+            catch (Exception ex) { result = 1; log.Add("ERROR - " + ex); if (NumberServer.LastUnexpectedFailure != null) log.Add("DETALLE DEL PRINCIPAL - " + NumberServer.LastUnexpectedFailure); }
             finally
             {
                 Storage.Root = originalRoot;
+                AuthorizationRules.CurrentDate = originalClock;
                 // Guard the absolute target before removing this test's tree.
                 string allowed = Path.GetFullPath(output) + Path.DirectorySeparatorChar;
                 if (Path.GetFullPath(temp).StartsWith(allowed, StringComparison.OrdinalIgnoreCase) && Path.GetFileName(temp).StartsWith("red-test-", StringComparison.Ordinal)) DeleteTestTree(temp);

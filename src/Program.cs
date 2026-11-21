@@ -67,6 +67,16 @@ namespace Bodoni
                         try
                         {
                             form.VerifyUi(Path.Combine(output, "prototipo-pantalla.png"));
+                            using (AuthorizationForm authorization = new AuthorizationForm(PrintAuthorization.OriginalTemplate(), new List<PrintAuthorization>(), true))
+                            {
+                                authorization.Show(); Application.DoEvents();
+                                using (Bitmap capture = new Bitmap(authorization.Width, authorization.Height))
+                                {
+                                    authorization.DrawToBitmap(capture, new Rectangle(0, 0, capture.Width, capture.Height));
+                                    capture.Save(Path.Combine(output, "pie-imprenta-pantalla.png"));
+                                }
+                                authorization.Close();
+                            }
                             File.WriteAllText(Path.Combine(output, "REVISION_PANTALLA.txt"), "OK - Ventana visible, captura de controles, edición de detalle y validación de cliente.\r\n", Encoding.UTF8);
                         }
                         catch (Exception ex)

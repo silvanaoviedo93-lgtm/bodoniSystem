@@ -80,6 +80,7 @@ namespace Bodoni
 
     public class IssuedNote
     {
+        public PrintAuthorization Authorization { get; set; }
         public string RequestId { get; set; }
         public string ServerId { get; set; }
         public string Series { get; set; }
@@ -106,6 +107,8 @@ namespace Bodoni
     }
     public class CentralState
     {
+        public PrintAuthorization Authorization { get; set; }
+        public List<PrintAuthorization> AuthorizationHistory { get; set; }
         public int Version { get; set; }
         public string ServerId { get; set; }
         public string Series { get; set; }
@@ -121,6 +124,9 @@ namespace Bodoni
     }
     public class CentralStatus
     {
+        public PrintAuthorization Authorization { get; set; }
+        public string ServerDate { get; set; }
+        public string AuthorizationNotice { get; set; }
         public string ServerId { get; set; }
         public string Series { get; set; }
         public int LastNumber { get; set; }
@@ -150,11 +156,17 @@ namespace Bodoni
                     LedgerEnvelope envelope = NetworkJson.Read<LedgerEnvelope>(path);
                     if (envelope == null || String.IsNullOrEmpty(envelope.Payload) || envelope.Checksum != NetworkJson.Hash(envelope.Payload)) throw new InvalidDataException("El registro central está dañado. No se reiniciará el contador: recupera el registro antes de emitir.");
                     state = NetworkJson.Parse<CentralState>(envelope.Payload); ValidateState(config.ServerId);
+                    if (state.Version < 3)
+                    {
+                        CentralState upgraded = NetworkJson.Copy(state); upgraded.Version = 3;
+                        if (state.Version < 3) { upgraded.Authorization = PrintAuthorization.OriginalTemplate(); upgraded.AuthorizationHistory = new List<PrintAuthorization>(); }
+                        Commit(upgraded); state = upgraded;
+                    }
                 }
                 else
                 {
                     if (config.Initialized || File.Exists(marker)) throw new InvalidDataException("Falta el registro de un principal que ya fue inicializado. No se reiniciará el consecutivo: recupera sus datos antes de emitir.");
-                    state = new CentralState { Version = 2, ServerId = config.ServerId, Series = "001-001-000", InitialLast = config.InitialLast, LastNumber = config.InitialLast, Notes = new List<IssuedNote>() };
+                    state = new CentralState { Version = 3, Authorization = PrintAuthorization.OriginalTemplate(), AuthorizationHistory = new List<PrintAuthorization>(), ServerId = config.ServerId, Series = "001-001-000", InitialLast = config.InitialLast, LastNumber = config.InitialLast, Notes = new List<IssuedNote>() };
                     Commit(state);
                 }
                 if (!File.Exists(marker)) Storage.WriteBytes(marker, Encoding.ASCII.GetBytes(config.ServerId));
@@ -163,7 +175,7 @@ namespace Bodoni
         }
         void ValidateState(string expectedId)
         {
-            if (state == null || state.Version < 1 || state.Version > 2 || state.ServerId != expectedId || state.Series != "001-001-000" || state.Notes == null || state.InitialLast < 0 || state.LastNumber > 999999 || state.LastNumber != state.InitialLast + state.Notes.Count)
+            if (state == null || state.Version < 1 || state.Version > 3 || state.ServerId != expectedId || state.Series != "001-001-000" || state.Notes == null || state.InitialLast < 0 || state.LastNumber > 999999 || state.LastNumber != state.InitialLast + state.Notes.Count)
                 throw new InvalidDataException("El registro central no coincide con esta conexión o su secuencia no es válida. No se reiniciará.");
             HashSet<string> ids = new HashSet<string>(StringComparer.Ordinal);
             for (int i = 0; i < state.Notes.Count; i++)
@@ -176,6 +188,12 @@ namespace Bodoni
             if (state.CancelledHistory == null) state.CancelledHistory = new List<IssuedNote>();
             foreach (IssuedNote note in state.CancelledHistory)
                 if (note == null || !note.Cancelled || String.IsNullOrWhiteSpace(note.CancellationReason) || String.IsNullOrWhiteSpace(note.CancelledUtc) || !ids.Add(note.RequestId) || note.ServerId != state.ServerId || note.Series != state.Series || note.Number <= state.InitialLast || note.Number > state.LastNumber || note.Fingerprint != NoteRules.Fingerprint(note.Note) || note.Total != Calculation.Total(Calculation.Lines(note.Note))) throw new InvalidDataException("El historial de anulaciones no es válido.");
+            if (state.Version >= 3)
+            {
+                if (state.Authorization == null || state.AuthorizationHistory == null) throw new InvalidDataException("Faltan los datos de autorización del registro. No se reemplazarán por valores iniciales.");
+                state.Authorization.Validate();
+                foreach (PrintAuthorization authorization in state.AuthorizationHistory) { if (authorization == null) throw new InvalidDataException("El historial de autorizaciones está dañado."); authorization.Validate(); }
+            }
         }
         void Commit(CentralState candidate)
         {
@@ -186,7 +204,26 @@ namespace Bodoni
         void CheckOpen() { if (disposed) throw new ObjectDisposedException("Registro central"); }
         public CentralStatus Status()
         {
-            lock (gate) { CheckOpen(); return new CentralStatus { ServerId = state.ServerId, Series = state.Series, LastNumber = state.LastNumber, NextNumber = ReusableLast ? state.LastNumber : state.LastNumber + 1, Count = state.Notes.Count }; }
+            lock (gate) { CheckOpen(); DateTime today = AuthorizationRules.CurrentDate().Date; int next = ReusableLast ? state.LastNumber : state.LastNumber + 1; return new CentralStatus { Authorization = NetworkJson.Copy(state.Authorization), ServerDate = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), AuthorizationNotice = AuthorizationRules.Notice(state.Authorization, today), ServerId = state.ServerId, Series = state.Series, LastNumber = state.LastNumber, NextNumber = next, Count = state.Notes.Count }; }
+        }
+        public List<PrintAuthorization> GetAuthorizationHistory()
+        {
+            lock (gate) { CheckOpen(); return NetworkJson.Copy(state.AuthorizationHistory); }
+        }
+        public PrintAuthorization UpdateAuthorization(PrintAuthorization value)
+        {
+            if (value == null) throw new ArgumentException("Falta el pie de imprenta actualizado.");
+            value = NetworkJson.Copy(value); value.Validate();
+            lock (gate)
+            {
+                CheckOpen();
+                if (state.Authorization.SameContent(value)) return NetworkJson.Copy(state.Authorization);
+                if (state.Authorization.RevisionId != value.RevisionId) throw new ArgumentException("La autorización cambió en otra ventana. Vuelve a abrir Pie de imprenta antes de guardar.");
+                CentralState candidate = NetworkJson.Copy(state); candidate.Version = 3;
+                candidate.AuthorizationHistory.Add(NetworkJson.Copy(state.Authorization));
+                value.RevisionId = Guid.NewGuid().ToString("D"); value.SavedUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture); candidate.Authorization = value;
+                Commit(candidate); state = candidate; return NetworkJson.Copy(value);
+            }
         }
         bool ReusableLast { get { return state.Notes.Count > 0 && state.Notes[state.Notes.Count - 1].Cancelled; } }
         IssuedNote Lookup(string requestId)
@@ -204,7 +241,7 @@ namespace Bodoni
                 if (original == null) throw new ArgumentException("No se encontró la nota.");
                 if (original.Cancelled) return NetworkJson.Copy(original);
                 if (state.Notes.Count == 0 || state.Notes[state.Notes.Count - 1].RequestId != requestId) throw new ArgumentException("Solo se puede anular para reemplazar la última nota. Ya existe una nota posterior.");
-                CentralState candidate = NetworkJson.Copy(state); candidate.Version = 2;
+                CentralState candidate = NetworkJson.Copy(state); candidate.Version = 3;
                 IssuedNote cancelled = candidate.Notes[candidate.Notes.Count - 1];
                 cancelled.Cancelled = true; cancelled.CancellationReason = reason; cancelled.CancelledUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
                 Commit(candidate); state = candidate; return NetworkJson.Copy(cancelled);
@@ -231,9 +268,12 @@ namespace Bodoni
                     if (existing.Fingerprint != fingerprint) throw new ArgumentException("La solicitud ya corresponde a otra nota. Recupera su emisión original.");
                     return NetworkJson.Copy(existing);
                 }
+                string authorizationBlock = AuthorizationRules.BlockReason(state.Authorization, AuthorizationRules.CurrentDate(), normalized.Date);
+                if (authorizationBlock != null) throw new AuthorizationException(authorizationBlock);
                 if (state.LastNumber >= 999999 && !ReusableLast) throw new ArgumentException("Se agotó el formato de seis dígitos. No se reiniciará la numeración.");
                 IssuedNote issued = new IssuedNote { RequestId = requestId, ServerId = state.ServerId, Series = state.Series, Number = ReusableLast ? state.LastNumber : state.LastNumber + 1, IssuedUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), Computer = (computer ?? "").Substring(0, Math.Min(80, (computer ?? "").Length)), Fingerprint = fingerprint, Note = normalized, Total = Calculation.Total(Calculation.Lines(normalized)) };
-                CentralState candidate = NetworkJson.Copy(state); candidate.Version = 2; candidate.LastNumber = issued.Number;
+                issued.Authorization = NetworkJson.Copy(state.Authorization);
+                CentralState candidate = NetworkJson.Copy(state); candidate.Version = 3; candidate.LastNumber = issued.Number;
                 if (candidate.CancelledHistory == null) candidate.CancelledHistory = new List<IssuedNote>();
                 if (ReusableLast) { candidate.CancelledHistory.Add(candidate.Notes[candidate.Notes.Count - 1]); candidate.Notes.RemoveAt(candidate.Notes.Count - 1); }
                 candidate.Notes.Add(issued);
@@ -262,6 +302,7 @@ namespace Bodoni
 
     public class NetworkRequest
     {
+        public PrintAuthorization Authorization { get; set; }
         public string Reason { get; set; }
         public int Version { get; set; }
         public string Key { get; set; }
@@ -273,6 +314,8 @@ namespace Bodoni
     }
     public class NetworkReply
     {
+        public bool AuthorizationRejected { get; set; }
+        public List<PrintAuthorization> AuthorizationHistory { get; set; }
         public bool Ok { get; set; }
         public string Error { get; set; }
         public string ServerId { get; set; }
@@ -307,6 +350,7 @@ namespace Bodoni
 
     public sealed class NumberServer : IDisposable
     {
+        internal static Exception LastUnexpectedFailure;
         readonly NetworkConfig config;
         readonly CentralLedger ledger;
         readonly TcpListener listener;
@@ -354,7 +398,7 @@ namespace Bodoni
                         NetworkReply reply = new NetworkReply { ServerId = config.ServerId };
                         try
                         {
-                            if (request == null || request.Version != 2 || !SameKey(config.Key, request.Key) || request.ServerId != config.ServerId) throw new ArgumentException("Revisa la conexión y utiliza la misma versión actualizada de Bodoni en todos los equipos.");
+                            if (request == null || request.Version != 3 || !SameKey(config.Key, request.Key) || request.ServerId != config.ServerId) throw new ArgumentException("Revisa la conexión y utiliza la misma versión actualizada de Bodoni en todos los equipos.");
                             switch (request.Operation)
                             {
                                 case "status": reply.Status = ledger.Status(); break;
@@ -362,11 +406,15 @@ namespace Bodoni
                                 case "find": reply.Issued = ledger.Find(request.RequestId); break;
                                 case "recent": reply.Notes = ledger.Recent(); break;
                                 case "cancel-last": reply.Issued = ledger.CancelLast(request.RequestId, request.Reason); reply.Status = ledger.Status(); break;
+                                case "authorization-history": reply.AuthorizationHistory = ledger.GetAuthorizationHistory(); break;
+                                case "set-authorization":
+                                    if (!IPAddress.IsLoopback(((IPEndPoint)client.Client.RemoteEndPoint).Address)) throw new ArgumentException("Actualiza el pie de imprenta desde el computador principal.");
+                                    ledger.UpdateAuthorization(request.Authorization); reply.Status = ledger.Status(); break;
                                 default: throw new ArgumentException("La operación solicitada no existe.");
                             }
                             reply.Ok = true;
                         }
-                        catch (Exception ex) { reply.Error = ex is ArgumentException ? ex.Message : "El principal no pudo guardar o leer el registro. No se generará otro número por este intento."; }
+                        catch (Exception ex) { if (!(ex is ArgumentException)) LastUnexpectedFailure = ex; reply.AuthorizationRejected = ex is AuthorizationException; reply.Error = ex is ArgumentException ? ex.Message : "El principal no pudo guardar o leer el registro. No se generará otro número por este intento."; }
                         NetworkFrame.Write(stream, reply);
                     }
                 }
@@ -380,7 +428,7 @@ namespace Bodoni
     {
         readonly NetworkConfig config;
         public NumberClient(NetworkConfig configuration) { config = NetworkJson.Copy(configuration); config.Validate(); }
-        public NetworkReply Call(string operation, string requestId, Draft note, string reason = null)
+        public NetworkReply Call(string operation, string requestId, Draft note, string reason = null, PrintAuthorization authorization = null)
         {
             using (TcpClient client = new TcpClient())
             {
@@ -390,15 +438,17 @@ namespace Bodoni
                 client.ReceiveTimeout = 6000; client.SendTimeout = 6000;
                 using (NetworkStream stream = client.GetStream())
                 {
-                    NetworkFrame.Write(stream, new NetworkRequest { Version = 2, Key = config.Key, ServerId = config.ServerId, Operation = operation, RequestId = requestId, Note = note, Reason = reason, Computer = Environment.MachineName });
+                    NetworkFrame.Write(stream, new NetworkRequest { Version = 3, Key = config.Key, ServerId = config.ServerId, Operation = operation, RequestId = requestId, Note = note, Reason = reason, Authorization = authorization, Computer = Environment.MachineName });
                     NetworkReply reply = NetworkFrame.Read<NetworkReply>(stream);
                     if (reply == null || reply.ServerId != config.ServerId) throw new IOException("La respuesta no corresponde al principal configurado.");
-                    if (!reply.Ok) throw new InvalidOperationException(reply.Error ?? "El principal rechazó la solicitud.");
+                    if (!reply.Ok) { if (operation == "issue" && reply.AuthorizationRejected) throw new AuthorizationException(reply.Error); throw new InvalidOperationException(reply.Error ?? "El principal rechazó la solicitud."); }
                     return reply;
                 }
             }
         }
         public CentralStatus Status() { return Call("status", null, null).Status; }
+        public CentralStatus UpdateAuthorization(PrintAuthorization value) { return Call("set-authorization", null, null, null, value).Status; }
+        public List<PrintAuthorization> AuthorizationHistory() { return Call("authorization-history", null, null).AuthorizationHistory; }
         public IssuedNote CancelLast(string requestId, string reason) { return Call("cancel-last", requestId, null, reason).Issued; }
         public IssuedNote Issue(string requestId, Draft note) { return Call("issue", requestId, note).Issued; }
         public IssuedNote Find(string requestId) { return Call("find", requestId, null).Issued; }

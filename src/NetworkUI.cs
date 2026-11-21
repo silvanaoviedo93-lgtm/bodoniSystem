@@ -22,9 +22,10 @@ namespace Bodoni
 
         Control BuildNetworkBar()
         {
-            TableLayoutPanel bar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Color.White };
+            TableLayoutPanel bar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Color.White };
             bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             bar.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            bar.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
             bar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             FlowLayoutPanel actions = Flow();
             actions.Controls.Add(Button("Red y numeración", ConfigureNetwork));
@@ -32,10 +33,12 @@ namespace Bodoni
             actions.Controls.Add(issueButton); actions.Controls.Add(Button("Historial", ShowHistory)); actions.Controls.Add(Button("Exportar conexión", ExportConnection));
             actions.Controls.Add(Button("Última numeración", ShowNumbering));
             actions.Controls.Add(Button("Anular última nota", CancelLastNote));
+            actions.Controls.Add(Button("Pie de imprenta", ConfigureAuthorization));
             bar.Controls.Add(actions, 0, 0);
             networkStatus = TextLabel("Sin principal configurado · Los borradores no consumen números."); networkStatus.MinimumSize = new Size(260, 30); networkStatus.Padding = new Padding(8, 0, 0, 0);
             bar.Controls.Add(networkStatus, 0, 1);
-            return bar;
+            authorizationNotice = TextLabel("Conecta con el principal para comprobar la autorización del pie de imprenta.");
+            authorizationNotice.Padding = new Padding(8, 0, 0, 0); bar.Controls.Add(authorizationNotice, 0, 2); return bar;
         }
         void RestoreWork()
         {
@@ -75,6 +78,7 @@ namespace Bodoni
             networkNotice.BackColor = issued ? Color.FromArgb(221, 243, 230) : Color.FromArgb(255, 242, 210);
             if (issued && workflow.State.Issued.Cancelled) networkNotice.Text = "NOTA ANULADA " + WorkNumber + " · " + workflow.State.Issued.CancellationReason + " · Se conserva en el historial.";
             if (Program.PracticeMode) networkNotice.Text = "PRÁCTICA · " + networkNotice.Text;
+            UpdateAuthorizationControls();
         }
         void LoadNetwork()
         {
@@ -85,7 +89,7 @@ namespace Bodoni
         }
         void ApplyNetwork(NetworkConfig config)
         {
-            config.Validate(); connectionGeneration++; connected = false;
+            config.Validate(); connectionGeneration++; connected = false; authorizationStatus = null;
             if (numberServer != null) { numberServer.Dispose(); numberServer = null; }
             networkConfig = NetworkJson.Copy(config);
             if (networkConfig.Role == "Principal")
@@ -112,11 +116,12 @@ namespace Bodoni
                 connected = true;
                 networkStatus.Text = (config.Role == "Principal" ? "PRINCIPAL" : config.Host) + " · Último " + status.LastNumber.ToString("D6") + " · Próximo " + (status.NextNumber > 999999 ? "agotado" : status.NextNumber.ToString("D6"));
                 networkStatus.ForeColor = Color.FromArgb(30, 105, 70);
+                AcceptAuthorizationStatus(status, true);
             }
             catch (Exception)
             {
                 if (IsDisposed || generation != connectionGeneration) return;
-                connected = false; networkStatus.Text = "Sin conexión al principal · No se asignarán números localmente."; networkStatus.ForeColor = Color.Firebrick;
+                connected = false; authorizationStatus = null; networkStatus.Text = "Sin conexión al principal · No se asignarán números localmente."; networkStatus.ForeColor = Color.Firebrick;
             }
             finally { polling = false; if (!IsDisposed) UpdateWorkControls(); }
         }
@@ -156,7 +161,7 @@ namespace Bodoni
             {
                 CentralStatus status = await Task.Factory.StartNew(delegate { return new NumberClient(config).Status(); });
                 if (IsDisposed) return;
-                ShowInfo((Program.PracticeMode ? "PRÁCTICA · Datos separados de producción\n\n" : "") + "Principal: " + config.Host + "\nSerie: " + status.Series + "\nÚltima numeración utilizada: " + status.LastNumber.ToString("D6") + "\nSiguiente al emitir: " + (status.NextNumber > 999999 ? "agotado" : status.NextNumber.ToString("D6")) + "\nNotas registradas: " + status.Count + (status.NextNumber == status.LastNumber ? "\nLa última nota está anulada; el siguiente documento reemplazará ese número." : "") + "\n\nConsultar no consume ni reserva números.");
+                ShowInfo((Program.PracticeMode ? "PRÁCTICA · Datos separados de producción\n\n" : "") + "Principal: " + config.Host + "\nSerie: " + status.Series + "\nÚltima numeración utilizada: " + status.LastNumber.ToString("D6") + "\nSiguiente al emitir: " + (status.NextNumber > 999999 ? "agotado" : status.NextNumber.ToString("D6")) + "\nNotas registradas: " + status.Count + (status.NextNumber == status.LastNumber ? "\nLa última nota está anulada; el siguiente documento reemplazará ese número." : "") + "\n\n" + status.AuthorizationNotice + "\n\nConsultar no consume ni reserva números.");
             }
             catch (Exception ex) { if (!IsDisposed) ShowInfo("No se pudo consultar la numeración actual.\n\n" + ex.Message); }
             finally { networkBusy = false; if (!IsDisposed) UpdateWorkControls(); }
@@ -195,6 +200,8 @@ namespace Bodoni
             {
                 if (!workflow.State.Pending)
                 {
+                    string authorizationBlock = CurrentAuthorizationBlock();
+                    if (authorizationBlock != null) throw new AuthorizationException(authorizationBlock);
                     Draft draft = ReadDraft(); Bodoni.Layout.Build(draft, ActiveProfile, true); NoteRules.Normalize(draft);
                     if (MessageBox.Show(this, "Se guardará esta nota en el principal y se le asignará el siguiente número real. Después podrás generar sus PDF o reimprimir con ese mismo número.\n\n¿Emitir la nota de venta?", "Emitir nota de venta", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
                     workflow.Prepare(draft, networkConfig.ServerId);
@@ -208,6 +215,13 @@ namespace Bodoni
                 if (IsDisposed) return;
                 workflow.Complete(note); SetDraft(note.Note); dirty = false; SaveSession();
                 footer.Text = "Nota " + note.DisplayNumber + " guardada en el principal. Genera el PDF completo o solo datos; reimprimir no cambia su número.";
+            }
+            catch (AuthorizationException ex)
+            {
+                if (IsDisposed) return;
+                try { workflow.ReleaseRejectedAuthorization(); dirty = false; SaveSession(); }
+                catch (Exception saveError) { ShowInfo("El rechazo se recibió, pero no se pudo guardar el borrador. Se conserva la solicitud para recuperar.\n\n" + saveError.Message); }
+                ShowInfo(ex.Message);
             }
             catch (Exception ex)
             {
