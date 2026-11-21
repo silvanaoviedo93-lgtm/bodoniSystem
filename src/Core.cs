@@ -122,10 +122,25 @@ namespace Bodoni
                     file.Write(content, 0, content.Length);
                     file.Flush(true);
                 }
-                if (File.Exists(full)) File.Replace(temp, full, null);
+                if (File.Exists(full)) ReplaceDurably(temp, full);
                 else File.Move(temp, full);
             }
             finally { if (File.Exists(temp)) File.Delete(temp); }
+        }
+        static void ReplaceDurably(string temporary, string destination)
+        {
+            for (int attempt = 0; ; attempt++)
+            {
+                try { File.Replace(temporary, destination, null); return; }
+                catch (IOException ex)
+                {
+                    int code = ex.HResult & 0xffff;
+                    // Sharing/lock violation or ERROR_UNABLE_TO_REMOVE_REPLACED.
+                    // Retry the same atomic operation; never delete the ledger.
+                    if (attempt >= 4 || (code != 32 && code != 33 && code != 1175) || !File.Exists(temporary) || !File.Exists(destination)) throw;
+                    System.Threading.Thread.Sleep(40 * (attempt + 1));
+                }
+            }
         }
     }
 

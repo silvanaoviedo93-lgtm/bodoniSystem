@@ -315,6 +315,17 @@ namespace Bodoni
                 Reject(delegate { using (CentralLedger missing = new CentralLedger(Path.Combine(temp, "sin-datos", "registro.json"), initialized)) { } }, "La configuración de un principal existente también impide arrancar con datos vacíos");
                 VerifyAuthorization(temp, config); Storage.Root = originalRoot;
                 VerifyNumberRange(temp);
+                string transientPath = Path.Combine(temp, "bloqueo-transitorio.json"); Storage.WriteBytes(transientPath, Encoding.UTF8.GetBytes("anterior"));
+                using (FileStream held = new FileStream(transientPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    Task release = Task.Factory.StartNew(delegate { System.Threading.Thread.Sleep(120); held.Dispose(); });
+                    try { Storage.WriteBytes(transientPath, Encoding.UTF8.GetBytes("actualizado")); }
+                    finally { release.Wait(); }
+                }
+                Check(File.ReadAllText(transientPath) == "actualizado", "Un bloqueo breve de Windows se reintenta conservando el reemplazo atómico");
+                using (FileStream held = new FileStream(transientPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    Reject(delegate { Storage.WriteBytes(transientPath, Encoding.UTF8.GetBytes("no confirmado")); }, "Un bloqueo persistente se comunica sin borrar ni sobrescribir el registro");
+                Check(File.ReadAllText(transientPath) == "actualizado", "El archivo anterior permanece íntegro si no se libera el bloqueo");
                 log.Add("ALCANCE: pruebas en TCP local con tres clientes; instalación y prueba entre computadoras físicas pendientes.");
             }
             catch (Exception ex) { result = 1; log.Add("ERROR - " + ex); if (NumberServer.LastUnexpectedFailure != null) log.Add("DETALLE DEL PRINCIPAL - " + NumberServer.LastUnexpectedFailure); }
